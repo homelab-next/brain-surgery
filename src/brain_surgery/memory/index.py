@@ -281,6 +281,13 @@ class MemoryIndex:
         return self.db.execute("SELECT 1 FROM watchlist WHERE hash = ? AND kind = ?",
                                (hash, kind)).fetchone() is not None
 
+    def any_watch(self, hash: str) -> str | None:
+        """The kind of any watchlist entry for this hash (quarantined/excised/superseded),
+        or None. Used to avoid auto-acting on content already under review or removed."""
+        r = self.db.execute("SELECT kind FROM watchlist WHERE hash = ? LIMIT 1",
+                            (hash,)).fetchone()
+        return r["kind"] if r else None
+
     def regrowth(self) -> list[dict[str, Any]]:
         # Known edge: two identical blocks quarantined from the SAME file under two holds;
         # releasing one reports the other as regrown until it, too, is resolved.
@@ -331,6 +338,10 @@ class MemoryIndex:
         sql = (f"SELECT scope, scoped_path, agent, orig_path, COUNT(*) AS blocks "
                f"FROM scoped WHERE scope IN ({marks}) GROUP BY scoped_path ORDER BY scoped_path")
         return [dict(r) for r in self.db.execute(sql, scopes)]
+
+    def count_hash(self, hash: str) -> int:
+        return self.db.execute("SELECT COUNT(DISTINCT file_id) FROM blocks WHERE hash = ?",
+                               (hash,)).fetchone()[0]
 
     def agent_for_path(self, path: str) -> str | None:
         r = self.db.execute("SELECT agent FROM files WHERE path = ?", (path,)).fetchone()

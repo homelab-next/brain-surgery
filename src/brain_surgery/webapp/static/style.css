@@ -143,3 +143,5 @@ textarea.reword { width: 100%; min-height: 160px; margin: 8px 0; padding: 10px; 
 
 select.tsel { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; }
 .trace h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; margin: 14px 0 6px; }
+
+.badge.ws { background: var(--r1); color: #fff; } .badge.ws.enforce { background: var(--r3); }

@@ -64,3 +64,13 @@ provenance:
     - ~/.claude/projects
   index_db: state/provenance.sqlite   # built from the logs; must be outside every scanned root
   git: false         # when a block has no session log, try `git log` on its file for a hint
+
+# Optional: write-time screening — screen a memory as it is written and, in enforce mode,
+# auto-quarantine a high scorer before the next session loads it. SAFETY GATE: it only ever
+# moves a block to the review queue; it never releases or excises. Leave it in SHADOW until
+# the screen has been calibrated (run shadow, grade with `eval` on your release/excise
+# labels, then flip to enforce). See examples/hooks/post_write_screen.py for a Claude Code
+# PostToolUse hook; the fleet (no hooks) calls `memory screen-write` from dispatch instead.
+write_screen:
+  mode: shadow          # shadow (record only) | enforce (auto-quarantine)
+  actions: [quarantine] # which screen outcomes auto-quarantine in enforce mode

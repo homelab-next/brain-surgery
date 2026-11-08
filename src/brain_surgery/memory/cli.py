@@ -312,6 +312,18 @@ def cmd_propose_scopes(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_screen_write(args: argparse.Namespace) -> int:
+    from .quarantine import Quarantine
+    from .write_screen import screen_write
+
+    cfg, idx, holds = _open(args)
+    mode = "enforce" if args.enforce else "shadow" if args.shadow else None
+    res = screen_write(cfg, idx, Quarantine(idx, holds), paths=args.file, block_ids=args.block_id,
+                       mode=mode)
+    print(json.dumps(res, indent=2))
+    return 10 if res.get("quarantined") else 0
+
+
 def cmd_web(args: argparse.Namespace) -> int:
     from ..webapp.api import WebContext
     from ..webapp.server import make_server
@@ -437,6 +449,14 @@ def register(sub: argparse._SubParsersAction) -> None:
     s.add_argument("--truth", required=True, help="provenance_truth.jsonl (from `synth --with-logs`)")
     s.add_argument("--rebuild", action="store_true")
     s.set_defaults(func=cmd_trace_eval)
+
+    s = ms.add_parser("screen-write", help="screen just-written memory; auto-quarantine in enforce mode")
+    s.add_argument("--file", nargs="+", help="file(s) just written")
+    s.add_argument("--block-id", nargs="+", help="specific block ids to screen")
+    g = s.add_mutually_exclusive_group()
+    g.add_argument("--enforce", action="store_true", help="override config mode: act")
+    g.add_argument("--shadow", action="store_true", help="override config mode: record only")
+    s.set_defaults(func=cmd_screen_write)
 
     s = ms.add_parser("scope", help="move blocks into a model-scoped sibling file")
     s.add_argument("--id", nargs="+")

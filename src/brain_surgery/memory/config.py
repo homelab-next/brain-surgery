@@ -29,6 +29,9 @@ class MemoryConfig:
     prov_git: bool = False
     scopes: dict[str, dict[str, Any]] = field(default_factory=dict)
     scope_proposals: list[dict[str, Any]] = field(default_factory=list)
+    write_mode: str = "shadow"               # shadow (record only) | enforce (auto-quarantine)
+    write_actions: tuple[str, ...] = ("quarantine",)
+    write_reason_prefix: str = "auto: write-time screen"
 
     def scopes_for_model(self, model: str) -> list[str]:
         """Scope names whose model list matches ``model`` (exact or fnmatch)."""
@@ -98,8 +101,17 @@ def load_memory_config(path: str | Path) -> MemoryConfig:
     for p in proposals:
         if p.get("scope") not in scopes:
             raise MemoryConfigError(f"scope_proposals references unknown scope {p.get('scope')!r}")
+    ws = raw.get("write_screen") or {}
+    write_mode = str(ws.get("mode", "shadow"))
+    if write_mode not in ("shadow", "enforce"):
+        raise MemoryConfigError("write_screen.mode must be 'shadow' or 'enforce'")
+    write_actions = tuple(ws.get("actions") or ["quarantine"])
+    if any(a not in ("quarantine", "review") for a in write_actions):
+        raise MemoryConfigError("write_screen.actions may only contain 'quarantine' and/or 'review'")
     return MemoryConfig(sources=sources, index_db=index_db, holds_db=holds_db,
                         decision_log_dir=log_dir, screen_spec=spec, classifiers=classifiers,
                         prov_logs=prov_logs, prov_index_db=prov_index_db,
                         prov_git=bool(prov.get("git", False)), scopes=scopes,
-                        scope_proposals=list(proposals))
+                        scope_proposals=list(proposals), write_mode=write_mode,
+                        write_actions=write_actions,
+                        write_reason_prefix=str(ws.get("reason_prefix") or "auto: write-time screen"))

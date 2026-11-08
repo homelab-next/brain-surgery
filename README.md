@@ -274,6 +274,45 @@ decided outcomes, the unsure rate, an expected-vs-actual confusion table and a
 per-scenario breakdown. If the screen ran without `decision_log_dir`, only the outcome
 metrics are available.
 
+## Write-time screening (auto-quarantine)
+
+The proactive twin of the batch screen: screen a memory **as it is written**, and — in
+enforce mode — auto-quarantine a high scorer before the next session ever loads it.
+
+```yaml
+# memory.yaml
+write_screen:
+  mode: shadow            # shadow (record only) | enforce (auto-quarantine)
+  actions: [quarantine]   # which outcomes auto-quarantine in enforce mode
+```
+
+```bash
+brain-surgery memory --config memory.yaml screen-write --file PATH…   [--enforce | --shadow]
+```
+
+It re-indexes the written file, screens its new blocks, records and logs each outcome, and
+in enforce mode quarantines any whose outcome is in `actions`. It is a **safety gate**: it
+can only move a block to the review queue, never release or excise. It will not touch a
+**managed** copy (a deploy would restore it) or content already under review or excised
+(watchlisted), and it reports those as skipped.
+
+**Default is shadow, and that matters.** Run it in shadow so it records what it *would*
+quarantine without acting; grade those decisions with `eval` against your own
+release/excise labels; flip to `enforce` only once it clears your precision/escalation bar.
+Promoting on the day you first switch it on is the mistake the register warns about — let it
+operate and catch (or clear) real cases first.
+
+**Two wirings, both yours** (this session can't touch your fleet):
+
+- **Interactive Claude Code sessions** — a `PostToolUse` hook on Write/Edit. A ready example
+  is `examples/hooks/post_write_screen.py`: it acts only on files under a scanned memory
+  root, and never fails the agent's write on a screening error.
+- **The production fleet** (which runs no hooks) — call `memory screen-write --file <path>`,
+  or import `brain_surgery.memory.write_screen.screen_write`, from the orchestrator's
+  dispatch step after an agent run changes a memory file.
+
+The review page's header shows the current write-screen mode.
+
 ## Review page
 
 A self-hosted page over the index and hold queue: see where risky memory lives, drill in,
@@ -426,5 +465,3 @@ tree, using harmless sample text. No network and no real model calls.
 
 - **Calibration:** turn quarantine, release and excise decisions into labelled data for
   the memory screen; refit thresholds; later, a model trained locally.
-- **Write-time screen:** run the same spec as memories are written, and send a high
-  scorer straight to quarantine (once calibration clears the promotion gate).

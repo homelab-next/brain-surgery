@@ -70,7 +70,9 @@ class WebContext:
                 "blocks": blocks, "chars": chars,
                 "screen": self.index.screen_summary(),
                 "regrowth": len(self.index.regrowth()), "holds": holds,
-                "provenance": bool(self.cfg.prov_index_db), "read_only": self.read_only}
+                "provenance": bool(self.cfg.prov_index_db), "read_only": self.read_only,
+                "write_screen": {"mode": self.cfg.write_mode,
+                                 "actions": list(self.cfg.write_actions)} if self.cfg.screen_spec else None}
 
     def tree(self) -> dict[str, Any]:
         """Nested source -> agent -> file for the treemap; bytes size it, risk colors it."""

@@ -53,6 +53,9 @@ async function refreshAll() {
   $("#tray-scope").classList.toggle("hidden", !has); $("#tray-scope-go").classList.toggle("hidden", !has);
   $("#btn-scoped").classList.toggle("hidden", !state.scopes.length);
   $("#ro-badge").classList.toggle("hidden", !ov.read_only);
+  const ws = ov.write_screen, wb = $("#ws-badge");
+  if (ws) { wb.textContent = "write-screen: " + ws.mode; wb.classList.toggle("enforce", ws.mode === "enforce"); wb.classList.remove("hidden"); }
+  else wb.classList.add("hidden");
   if (ov.read_only) { $("#tray-go").disabled = true; $("#btn-rescan").disabled = true; }
   renderStats(ov); renderBand(); renderTreemap(); updateHoldsBadge(ov);
 }

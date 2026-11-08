@@ -280,7 +280,10 @@ def generate(out: str | Path, *, agents: int = 8, seed: int = 7, bloat_lines: in
         if "paths" in s:
             s["paths"] = [str((out / p).resolve()) for p in s["paths"]]
     base = {"sources": sources, "index_db": "state/memory.sqlite", "holds_db": "state/holds.sqlite",
-            "decision_log_dir": "state/decisions"}
+            "decision_log_dir": "state/decisions",
+            "scopes": {"restricted-cleared": {"label": "models cleared for the restricted topic",
+                                              "models": ["big-local-model", "cleared-*"]}},
+            "scope_proposals": [{"outcome": "review", "scope": "restricted-cleared"}]}
     oracle = {**base, "screen": {"spec": "specs/memory.screen.yaml", "classifiers": {
         "laya": {"kind": "label_oracle", "labels": "labels.jsonl", "noise": 0.1, "band": 0.15,
                  "seed": seed}}}}

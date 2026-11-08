@@ -85,6 +85,12 @@ def make_server(ctx: WebContext, host: str = "127.0.0.1", port: int = 8795) -> T
                     return self._json(200, ctx.trace(one["id"]))
                 if name == "roots":
                     return self._json(200, ctx.roots(one.get("scope", "flagged")))
+                if name == "scopes":
+                    return self._json(200, ctx.scopes())
+                if name == "scoped":
+                    return self._json(200, ctx.scoped_list(one.get("scope")))
+                if name == "scope-proposals":
+                    return self._json(200, ctx.scope_proposals())
                 self._json(404, {"error": "unknown endpoint"})
             except KeyError as exc:
                 self._json(400, {"error": f"missing parameter {exc}"})
@@ -123,6 +129,11 @@ def make_server(ctx: WebContext, host: str = "127.0.0.1", port: int = 8795) -> T
                     return self._json(200, ctx.do_dismiss(int(req["hold_id"]), req.get("note")))
                 if name == "rescan":
                     return self._json(200, ctx.rescan())
+                if name == "scope":
+                    return self._json(200, ctx.do_scope(req.get("block_ids") or [],
+                                                        req.get("scope") or "", req.get("note")))
+                if name == "unscope":
+                    return self._json(200, ctx.do_unscope(int(req["scoped_id"]), req.get("note")))
                 self._json(404, {"error": "unknown endpoint"})
             except KeyError as exc:
                 self._json(400, {"error": f"missing field {exc}"})

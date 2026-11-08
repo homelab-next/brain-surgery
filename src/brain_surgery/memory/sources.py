@@ -23,7 +23,7 @@ from typing import Any, Iterator, Mapping
 
 LOADED = ("always", "on_demand", "never")
 KINDS = ("claude_memory_dir", "agent_memory_root", "files", "skills", "markdown_dir")
-DEFAULT_EXCLUDE = ["*.archive-*.md"]
+DEFAULT_EXCLUDE = ["*.archive-*.md", "*.scoped.*.md"]
 
 
 @dataclass(frozen=True)

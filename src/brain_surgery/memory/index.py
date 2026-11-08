@@ -46,6 +46,14 @@ CREATE TABLE IF NOT EXISTS watchlist (
     hash TEXT NOT NULL, hold_id INTEGER NOT NULL, kind TEXT NOT NULL, path TEXT,
     added_at TEXT NOT NULL, note TEXT, PRIMARY KEY (hash, hold_id)
 );
+CREATE TABLE IF NOT EXISTS scoped (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, scope TEXT NOT NULL,
+    orig_path TEXT NOT NULL, scoped_path TEXT NOT NULL, agent TEXT, hash TEXT NOT NULL,
+    kind TEXT NOT NULL, prev_hash TEXT, prev_occ INTEGER, prev_kind TEXT,
+    next_hash TEXT, next_occ INTEGER, next_kind TEXT, copies_before INTEGER,
+    text TEXT NOT NULL, note TEXT
+);
+CREATE INDEX IF NOT EXISTS scoped_scope ON scoped(scope);
 """
 
 
@@ -283,6 +291,46 @@ class MemoryIndex:
                        OR (w.kind = 'quarantined' AND w.path = f.path)
                  GROUP BY b.id ORDER BY f.path, b.ord"""
         return [dict(r) for r in self.db.execute(sql)]
+
+    # -- scoped manifest ---------------------------------------------------------------
+    def add_scoped(self, row: dict[str, Any]) -> int:
+        cols = ("created_at", "scope", "orig_path", "scoped_path", "agent", "hash", "kind",
+                "prev_hash", "prev_occ", "prev_kind", "next_hash", "next_occ", "next_kind",
+                "copies_before", "text", "note")
+        cur = self.db.execute(
+            f"INSERT INTO scoped({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+            tuple(row.get(c) for c in cols))
+        self.db.commit()
+        return int(cur.lastrowid)
+
+    def list_scoped(self, scope: str | None = None, with_text: bool = False) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM scoped"
+        args: list[Any] = []
+        if scope:
+            sql += " WHERE scope = ?"
+            args.append(scope)
+        sql += " ORDER BY scope, orig_path, id"
+        rows = [dict(r) for r in self.db.execute(sql, args)]
+        if not with_text:
+            for r in rows:
+                r.pop("text", None)
+        return rows
+
+    def get_scoped(self, scoped_id: int) -> dict[str, Any] | None:
+        r = self.db.execute("SELECT * FROM scoped WHERE id = ?", (scoped_id,)).fetchone()
+        return dict(r) if r else None
+
+    def del_scoped(self, scoped_id: int) -> None:
+        self.db.execute("DELETE FROM scoped WHERE id = ?", (scoped_id,))
+        self.db.commit()
+
+    def scoped_paths_for_scopes(self, scopes: list[str]) -> list[dict[str, Any]]:
+        if not scopes:
+            return []
+        marks = ",".join("?" * len(scopes))
+        sql = (f"SELECT scope, scoped_path, agent, orig_path, COUNT(*) AS blocks "
+               f"FROM scoped WHERE scope IN ({marks}) GROUP BY scoped_path ORDER BY scoped_path")
+        return [dict(r) for r in self.db.execute(sql, scopes)]
 
     def agent_for_path(self, path: str) -> str | None:
         r = self.db.execute("SELECT agent FROM files WHERE path = ?", (path,)).fetchone()

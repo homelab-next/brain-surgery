@@ -301,6 +301,54 @@ It is the one place that shows memory text (it is the review surface). It **bind
 Authentik on the reference fleet); it can read every agent's memory and, without
 `--read-only`, change it. `--read-only` disables quarantine, release, excise and rescan.
 
+## Scoping — keep a memory, load it only on the right model
+
+A memory can be legitimate yet trip a general model's safety classifier during ordinary
+work. Instead of deleting it, **scope** it to a model: the block moves out of its live file
+into a sibling `…​.scoped.<scope>.md` that the agent's normal memory glob excludes, and a
+**loader** concatenates it back only in sessions on a model the scope permits. In a
+general-model session the block is simply absent (nothing to trip); on a cleared model it
+loads as before. Reversible with `unscope`.
+
+```yaml
+# memory.yaml
+scopes:
+  restricted-cleared:
+    label: "models cleared for this topic"
+    models: ["claude-opus-4-7", "claude-opus-4-8"]   # exact ids or fnmatch globs
+  local-only:
+    models: ["qwen*", "clef*"]
+scope_proposals:                       # the screen proposes; you confirm
+  - {outcome: review, scope: restricted-cleared}
+```
+
+```bash
+M="brain-surgery memory --config memory.yaml"
+$M propose-scopes                      # blocks the screen suggests scoping
+$M scope --id ID… | --file F | --hash H --scope restricted-cleared
+$M unscope SCOPED_ID                   # move it back to the original file
+$M scoped [--scope NAME]               # what is scoped
+$M scoped-for --model MODEL [--agent A] [--text | --paths]   # the loader
+```
+
+**Wiring (two steps, both yours):**
+
+1. **Exclude the scoped files from the agents' own memory.** brain-surgery's scan already
+   skips `*.scoped.*.md`; make the *fleet's* memory loading skip them too, so a scoped block
+   doesn't leak back into general sessions. (If agents read a whole directory, the sibling
+   sits beside the original — exclude the `.scoped.` pattern there.)
+2. **Load the scoped files when the model matches.** At session start, run
+   `scoped-for --model <the session's model> --agent <agent> --text` and concatenate the
+   output into that agent's memory. A general model matches no scope and gets nothing; a
+   cleared model gets its scoped blocks back. Wire it into a Claude Code `SessionStart` hook,
+   or into the orchestrator's dispatch step (where the model is already chosen).
+
+Scoping pairs with the router: the same model table decides where a prompt runs and which
+memories a session on that model may load. It is **not** a way to hide content from a
+provider's safety system — it keeps a genuinely-cleared memory out of sessions that aren't
+cleared for it, and the honest path for work that needs both the detail and a capable cloud
+model is a verified workspace (CVP), not scoping around the classifier.
+
 ## Provenance
 
 Trace a memory block back to what it was copied from, to a root you can act on, so one fix
@@ -380,4 +428,3 @@ tree, using harmless sample text. No network and no real model calls.
   the memory screen; refit thresholds; later, a model trained locally.
 - **Write-time screen:** run the same spec as memories are written, and send a high
   scorer straight to quarantine (once calibration clears the promotion gate).
-- **Scoping:** keep a memory but load it only into sessions on a designated model.

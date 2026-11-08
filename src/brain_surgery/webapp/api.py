@@ -251,6 +251,37 @@ class WebContext:
         self._guard()
         return self.index.scan(self.cfg.sources).to_dict()
 
+    # -- scoping ----------------------------------------------------------------------
+    def scopes(self) -> dict[str, Any]:
+        return {"scopes": [{"name": n, "label": s.get("label", n), "models": s.get("models", [])}
+                           for n, s in self.cfg.scopes.items()],
+                "proposals_configured": bool(self.cfg.scope_proposals)}
+
+    def scoped_list(self, scope: str | None = None) -> dict[str, Any]:
+        return {"scoped": self.index.list_scoped(scope=scope)}
+
+    def scope_proposals(self) -> dict[str, Any]:
+        from ..memory.scoping import propose_scopes
+        return {"proposals": propose_scopes(self.index, self.cfg.scope_proposals)}
+
+    def do_scope(self, block_ids: list[str], scope: str, note: str | None = None) -> dict[str, Any]:
+        self._guard()
+        from ..memory.scoping import ScopeError, Scoper
+        if not block_ids:
+            raise ApiError(400, "no block_ids")
+        try:
+            return Scoper(self.index, self.cfg.scopes).scope(block_ids, scope, note).to_dict()
+        except ScopeError as exc:
+            raise ApiError(400, str(exc)) from exc
+
+    def do_unscope(self, scoped_id: int, note: str | None = None) -> dict[str, Any]:
+        self._guard()
+        from ..memory.scoping import ScopeError, Scoper
+        try:
+            return Scoper(self.index, self.cfg.scopes).unscope(scoped_id, note)
+        except ScopeError as exc:
+            raise ApiError(404, str(exc)) from exc
+
 
 def _one_line(text: str, limit: int = 140) -> str:
     line = " ".join(text.split())

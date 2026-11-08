@@ -15,6 +15,7 @@
     <div id="stats" class="stats"></div>
     <div class="actions">
       <button id="btn-roots" class="ghost" title="Group flagged blocks by the source they trace to">Roots</button>
+      <button id="btn-scoped" class="ghost" title="Model-scoped memory and suggestions">Scoped</button>
       <button id="btn-rescan" class="ghost">Rescan</button>
       <button id="btn-theme" class="ghost" title="Toggle theme">◐</button>
     </div>
@@ -44,8 +45,10 @@
     </div>
     <div id="tray-list" class="tray-list"></div>
     <div class="tray-foot">
-      <input id="tray-reason" type="text" placeholder="reason for quarantine (required)">
+      <input id="tray-reason" type="text" placeholder="reason (required for quarantine)">
       <label class="chk"><input type="checkbox" id="tray-force"> force managed</label>
+      <select id="tray-scope" class="hidden tsel" title="scope the selection to a model"></select>
+      <button id="tray-scope-go" class="ghost hidden">Scope</button>
       <button id="tray-go" class="primary">Quarantine</button>
     </div>
   </div>

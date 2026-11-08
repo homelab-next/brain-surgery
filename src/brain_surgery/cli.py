@@ -159,6 +159,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     from .memory.config import MemoryConfigError
     from .memory.quarantine import QuarantineError
+    from .memory.scoping import ScopeError
 
     args = build_parser().parse_args(argv)
     try:
@@ -166,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     except (ConfigError, SpecError, MemoryConfigError) as exc:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
-    except QuarantineError as exc:
+    except (QuarantineError, ScopeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

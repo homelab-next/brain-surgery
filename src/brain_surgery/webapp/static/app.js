@@ -34,6 +34,8 @@ const state = { tree: null, zoom: [], groups: null, file: null, blocks: [], last
 async function boot() {
   $("#btn-rescan").onclick = rescan;
   $("#btn-roots").onclick = showRoots;
+  $("#btn-scoped").onclick = showScoped;
+  $("#tray-scope-go").onclick = doScope;
   $("#btn-theme").onclick = toggleTheme;
   $("#holds-toggle").onclick = () => { const h = $("#holds"); h.classList.toggle("hidden"); if (!h.classList.contains("hidden")) loadHolds(); };
   $("#tray-clear").onclick = () => { state.selection.clear(); renderTray(); renderFile(); };
@@ -43,8 +45,13 @@ async function boot() {
   window.addEventListener("resize", () => renderTreemap());
 }
 async function refreshAll() {
-  const [ov, groups, tree] = await Promise.all([api("overview"), api("groups"), api("tree")]);
-  state.readOnly = ov.read_only; state.groups = groups; state.tree = tree;
+  const [ov, groups, tree, scopes] = await Promise.all([api("overview"), api("groups"), api("tree"), api("scopes").catch(() => ({ scopes: [] }))]);
+  state.readOnly = ov.read_only; state.groups = groups; state.tree = tree; state.scopes = scopes.scopes || [];
+  const sel = $("#tray-scope"); sel.replaceChildren(el("option", { value: "", text: "scope to…" }),
+    ...state.scopes.map(s => el("option", { value: s.name, text: s.name })));
+  const has = state.scopes.length && !ov.read_only;
+  $("#tray-scope").classList.toggle("hidden", !has); $("#tray-scope-go").classList.toggle("hidden", !has);
+  $("#btn-scoped").classList.toggle("hidden", !state.scopes.length);
   $("#ro-badge").classList.toggle("hidden", !ov.read_only);
   if (ov.read_only) { $("#tray-go").disabled = true; $("#btn-rescan").disabled = true; }
   renderStats(ov); renderBand(); renderTreemap(); updateHoldsBadge(ov);
@@ -218,6 +225,53 @@ async function doQuarantine() {
   } catch (e) { toast(e.message, "err"); }
 }
 
+async function doScope() {
+  const scope = $("#tray-scope").value;
+  if (!scope) return toast("choose a scope", "err");
+  const ids = [...state.selection.keys()];
+  try {
+    const res = await postJSON("scope", { block_ids: ids, scope, note: "via review page" });
+    const n = res.scoped.length, skipped = res.skipped.length;
+    toast(`scoped ${n} block(s) to ${scope}${skipped ? ", " + skipped + " skipped" : ""}`, skipped ? "" : "ok");
+    state.selection.clear();
+    await refreshAll(); if (state.file) await openFile(state.file.path); renderTray();
+  } catch (e) { toast(e.message, "err"); }
+}
+async function showScoped() {
+  let data, prop; try { data = await api("scoped"); prop = await api("scope-proposals").catch(() => ({ proposals: [] })); }
+  catch (e) { return toast(e.message, "err"); }
+  const d = $("#detail"); d.replaceChildren(el("div", { class: "fhead" }, [el("h2", { text: "model-scoped memory" }),
+    el("div", { class: "fmeta" }, state.scopes.map(s => el("span", { text: `${s.name}: ${s.models.join(", ")}` })))]));
+  const wrap = el("div", { class: "trace" });
+  if (prop.proposals && prop.proposals.length) {
+    wrap.append(el("h3", { text: "suggested by the screen", class: "muted" }));
+    for (const p of prop.proposals.slice(0, 40)) {
+      wrap.append(el("div", { class: "hitem" }, [
+        el("div", { class: "htop" }, [el("span", { text: p.agent || "" }), el("span", { text: p.outcome })]),
+        el("div", { class: "hsample", text: (p.section || "") + "  →  " + p.suggested_scope }),
+        state.readOnly ? null : el("button", { class: "ghost small", text: "scope to " + p.suggested_scope, onclick: async () => {
+          try { await postJSON("scope", { block_ids: [p.block_id], scope: p.suggested_scope, note: "proposed" }); toast("scoped", "ok"); await refreshAll(); showScoped(); }
+          catch (e) { toast(e.message, "err"); } } }),
+      ]));
+    }
+  }
+  wrap.append(el("h3", { text: "currently scoped", class: "muted" }));
+  if (!data.scoped.length) wrap.append(el("p", { class: "muted", text: "nothing scoped yet" }));
+  for (const s of data.scoped) {
+    wrap.append(el("div", { class: "hitem" }, [
+      el("div", { class: "htop" }, [el("span", { text: s.scope }), el("span", { text: s.agent || "" })]),
+      el("div", { class: "hsample", text: (s.orig_path || "").split("/").pop() + " · " + s.kind }),
+      state.readOnly ? null : el("button", { class: "ghost small", text: "unscope (restore)", onclick: () => doUnscope(s.id) }),
+    ]));
+  }
+  d.append(wrap);
+}
+async function doUnscope(id) {
+  try { await postJSON("unscope", { scoped_id: id, note: "via review page" }); toast(`unscoped ${id}`, "ok"); }
+  catch (e) { return toast(e.message, "err"); }
+  await refreshAll(); showScoped(); if (state.file) openFile(state.file.path);
+}
+
 // ---- provenance --------------------------------------------------------------------
 async function showTrace(id) {
   let t; try { t = await api("trace?id=" + encodeURIComponent(id)); } catch (e) { return toast(e.message, "err"); }
@@ -294,7 +348,7 @@ async function openReword(id) {
   d.append(el("div", { class: "fhead" }, [el("h2", { text: "reword hold " + id }),
     el("div", { class: "fmeta" }, [el("span", { text: h.payload.agent || "" }),
       el("span", { text: (h.payload.path || "").split("/").pop() })]),
-    el("div", { class: "frow" }, [el("button", { class: "ghost small", text: "← back", onclick: renderFile })])]);
+    el("div", { class: "frow" }, [el("button", { class: "ghost small", text: "← back", onclick: renderFile })])]));
   const wrap = el("div", { class: "trace" });
   wrap.append(el("p", { class: "muted", text: "Clarify or summarize to a pointer (e.g. “analysis done — details in the case file on the local tier”). Re-screen checks it against your local memory gate before it goes back." }));
   const ta = el("textarea", { class: "reword" }); ta.value = orig;

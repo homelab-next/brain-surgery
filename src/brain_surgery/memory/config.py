@@ -27,6 +27,18 @@ class MemoryConfig:
     prov_logs: list[str] = field(default_factory=list)
     prov_index_db: Path | None = None
     prov_git: bool = False
+    scopes: dict[str, dict[str, Any]] = field(default_factory=dict)
+    scope_proposals: list[dict[str, Any]] = field(default_factory=list)
+
+    def scopes_for_model(self, model: str) -> list[str]:
+        """Scope names whose model list matches ``model`` (exact or fnmatch)."""
+        import fnmatch
+        out = []
+        for name, spec in self.scopes.items():
+            pats = spec.get("models") or []
+            if any(model == p or fnmatch.fnmatch(model, p) for p in pats):
+                out.append(name)
+        return out
 
 
 def load_memory_config(path: str | Path) -> MemoryConfig:
@@ -76,7 +88,18 @@ def load_memory_config(path: str | Path) -> MemoryConfig:
                            for n, c in (scr.get("classifiers") or {}).items()}
         except (KeyError, ValueError) as exc:
             raise MemoryConfigError(f"screen classifiers: {exc}") from exc
+    scopes = raw.get("scopes") or {}
+    if not isinstance(scopes, dict):
+        raise MemoryConfigError("scopes must be a mapping of name -> {models, label}")
+    for name, spec_ in scopes.items():
+        if not isinstance(spec_, dict) or not (spec_.get("models")):
+            raise MemoryConfigError(f"scope {name!r} needs a non-empty models list")
+    proposals = raw.get("scope_proposals") or []
+    for p in proposals:
+        if p.get("scope") not in scopes:
+            raise MemoryConfigError(f"scope_proposals references unknown scope {p.get('scope')!r}")
     return MemoryConfig(sources=sources, index_db=index_db, holds_db=holds_db,
                         decision_log_dir=log_dir, screen_spec=spec, classifiers=classifiers,
                         prov_logs=prov_logs, prov_index_db=prov_index_db,
-                        prov_git=bool(prov.get("git", False)))
+                        prov_git=bool(prov.get("git", False)), scopes=scopes,
+                        scope_proposals=list(proposals))

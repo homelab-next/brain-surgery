@@ -152,3 +152,17 @@ def test_http_rejects_bad_requests(ctx):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+def test_static_js_parses():
+    """Catch a syntax error in app.js (the API tests don't execute the browser JS)."""
+    import shutil, subprocess
+    from importlib import resources
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not available")
+    js = resources.files("brain_surgery.webapp").joinpath("static/app.js")
+    with resources.as_file(js) as path:
+        r = subprocess.run([node, "--check", str(path)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr

@@ -254,6 +254,64 @@ def cmd_trace_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_scope(args: argparse.Namespace) -> int:
+    from .scoping import Scoper
+
+    cfg, idx, _ = _open(args)
+    ids = list(args.id or [])
+    if args.file or args.hash:
+        ids += [r["id"] for r in idx.blocks(file_path=args.file, hash=args.hash)]
+    if not ids:
+        print("nothing selected (give --id, --file or --hash)")
+        return 1
+    res = Scoper(idx, cfg.scopes).scope(ids, args.scope, args.note)
+    print(json.dumps(res.to_dict(), indent=2))
+    return 0 if res.scoped else 1
+
+
+def cmd_unscope(args: argparse.Namespace) -> int:
+    from .scoping import Scoper
+
+    cfg, idx, _ = _open(args)
+    print(json.dumps(Scoper(idx, cfg.scopes).unscope(args.scoped_id, args.note), indent=2))
+    return 0
+
+
+def cmd_scoped(args: argparse.Namespace) -> int:
+    _, idx, _ = _open(args)
+    rows = idx.list_scoped(scope=args.scope)
+    _out(args, rows, ["id", "scope", "agent", "kind", "orig_path", "scoped_path"])
+    return 0
+
+
+def cmd_scoped_for(args: argparse.Namespace) -> int:
+    from .scoping import scoped_for
+
+    cfg, idx, _ = _open(args)
+    res = scoped_for(idx, cfg, args.model, agent=args.agent, with_text=args.text)
+    if args.text:
+        # loader output: concatenated scoped content for the session, or nothing
+        print("\n\n".join(f.get("text", "") for f in res["files"]).strip())
+    elif args.paths:
+        for f in res["files"]:
+            print(f["scoped_path"])
+    else:
+        print(json.dumps(res, indent=2))
+    return 0
+
+
+def cmd_propose_scopes(args: argparse.Namespace) -> int:
+    from .scoping import propose_scopes
+
+    cfg, idx, _ = _open(args)
+    if not cfg.scope_proposals:
+        print("no scope_proposals configured")
+        return 1
+    _out(args, propose_scopes(idx, cfg.scope_proposals),
+         ["block_id", "agent", "outcome", "suggested_scope", "section", "path"])
+    return 0
+
+
 def cmd_web(args: argparse.Namespace) -> int:
     from ..webapp.api import WebContext
     from ..webapp.server import make_server
@@ -379,6 +437,36 @@ def register(sub: argparse._SubParsersAction) -> None:
     s.add_argument("--truth", required=True, help="provenance_truth.jsonl (from `synth --with-logs`)")
     s.add_argument("--rebuild", action="store_true")
     s.set_defaults(func=cmd_trace_eval)
+
+    s = ms.add_parser("scope", help="move blocks into a model-scoped sibling file")
+    s.add_argument("--id", nargs="+")
+    s.add_argument("--file")
+    s.add_argument("--hash")
+    s.add_argument("--scope", required=True, help="a scope name from the config")
+    s.add_argument("--note")
+    s.set_defaults(func=cmd_scope)
+
+    s = ms.add_parser("unscope", help="move a scoped block back to its original file")
+    s.add_argument("scoped_id", type=int)
+    s.add_argument("--note")
+    s.set_defaults(func=cmd_unscope)
+
+    s = ms.add_parser("scoped", help="list scoped blocks")
+    s.add_argument("--scope")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(func=cmd_scoped)
+
+    s = ms.add_parser("scoped-for", help="loader: scoped content a session on MODEL should load")
+    s.add_argument("--model", required=True)
+    s.add_argument("--agent")
+    g = s.add_mutually_exclusive_group()
+    g.add_argument("--text", action="store_true", help="print the concatenated scoped content")
+    g.add_argument("--paths", action="store_true", help="print matching scoped file paths")
+    s.set_defaults(func=cmd_scoped_for)
+
+    s = ms.add_parser("propose-scopes", help="blocks the screen suggests scoping (operator confirms)")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(func=cmd_propose_scopes)
 
     s = ms.add_parser("web", help="serve the review web page (treemap, groups, quarantine, trace)")
     s.add_argument("--host", default="127.0.0.1")

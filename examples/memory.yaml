@@ -1,0 +1,59 @@
+# Example memory config. Paths are relative to this file unless absolute; ~ expands.
+# Replace the paths with where your agents' memory actually lives.
+sources:
+  # Claude Code auto-memory for one project: MEMORY.md is loaded every session,
+  # topic files when relevant.
+  - id: interactive
+    kind: claude_memory_dir
+    path: ~/.claude/projects/-home-me-project/memory
+
+  # Subagent memory (`memory: project` in an agent's frontmatter): one folder per agent.
+  - id: agents
+    kind: agent_memory_root
+    path: ~/project/.claude/agent-memory
+
+  # Instruction files loaded at every session start.
+  - id: instructions
+    kind: files
+    paths: [~/project/CLAUDE.md, ~/project/.claude/CLAUDE.md]
+    loaded: always
+
+  # A deployed copy: quarantine refuses to edit it (the next deploy would put it back)
+  # and points at where to make the change instead. --force overrides.
+  - id: deployed-instructions
+    kind: files
+    paths: [/opt/app/CLAUDE.md]
+    loaded: always
+    managed_by: "repo file roles/app/files/CLAUDE.md, deployed by Ansible"
+
+  # Skills: names and descriptions (front-matter) are listed in every session; bodies load
+  # when the skill is used.
+  - id: skills
+    kind: skills
+    path: ~/project/.claude/skills
+
+  # Any markdown tree an agent reads, e.g. a notes vault.
+  - id: notes
+    kind: markdown_dir
+    path: ~/notes
+    glob: "**/*.md"
+    loaded: on_demand
+    exclude: ["*.archive-*.md", "*/.trash/*"]
+
+# State. Must sit OUTSIDE every scanned root (checked on load). Use the same holds_db
+# as routing.yaml to review held prompts and quarantined memories in one queue.
+index_db: state/memory.sqlite
+holds_db: state/holds.sqlite
+decision_log_dir: state/decisions
+
+# Optional shadow screen (records outcomes only).
+screen:
+  spec: specs/memory.screen.yaml
+  classifiers:
+    rule:
+      kind: rules
+      rules: {}          # e.g. pointer_only: [{pattern: '^- \[.*\]\(.*\.md\)', answer: yes}]
+    laya:
+      kind: systemone
+      url: http://127.0.0.1:8899
+      timeout_s: 5

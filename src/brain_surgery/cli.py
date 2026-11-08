@@ -6,6 +6,10 @@
   brain-surgery holds  --db holds.sqlite show ID
   brain-surgery holds  --db holds.sqlite resolve ID {released,excised,dismissed} [--note N]
   brain-surgery serve  --config routing.yaml [--host H] [--port P]
+  brain-surgery memory --config memory.yaml {scan,tree,dupes,blocks,quarantine,release,excise,screen}
+
+Nothing prints memory or prompt text unless --text is given, so an agent session that
+runs these commands does not pull the content being reviewed into its own context.
 """
 from __future__ import annotations
 
@@ -80,8 +84,16 @@ def cmd_holds(args: argparse.Namespace) -> int:
         if h is None:
             print(f"no hold {args.id}", file=sys.stderr)
             return 1
-        _print(h.to_dict())
+        d = h.to_dict()
+        if not args.text and isinstance(d["payload"], dict) and d["payload"].get("text"):
+            d["payload"] = {**d["payload"], "text": f"<{len(d['payload']['text'])} chars; --text to show>"}
+        _print(d)
         return 0
+    held = q.get(args.id)
+    if held is not None and held.kind == "memory":
+        print("memory holds are resolved with `brain-surgery memory release|excise`, which also "
+              "restore the text or watchlist it", file=sys.stderr)
+        return 1
     h = q.resolve(args.id, args.status, args.note)
     print(f"hold {h.id} -> {h.status}")
     return 0
@@ -125,6 +137,7 @@ def build_parser() -> argparse.ArgumentParser:
     h.add_argument("--kind")
     h = hs.add_parser("show")
     h.add_argument("id", type=int)
+    h.add_argument("--text", action="store_true", help="include held text (off by default)")
     h = hs.add_parser("resolve")
     h.add_argument("id", type=int)
     h.add_argument("status", choices=["released", "excised", "dismissed"])
@@ -136,16 +149,26 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8790)
     s.set_defaults(func=cmd_serve)
+
+    from .memory.cli import register as register_memory
+
+    register_memory(sub)
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
+    from .memory.config import MemoryConfigError
+    from .memory.quarantine import QuarantineError
+
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
-    except (ConfigError, SpecError) as exc:
+    except (ConfigError, SpecError, MemoryConfigError) as exc:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
+    except QuarantineError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

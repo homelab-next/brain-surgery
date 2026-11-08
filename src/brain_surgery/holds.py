@@ -101,6 +101,11 @@ class HoldQueue:
         self._db.commit()
         return self.get(hold_id)  # type: ignore[return-value]
 
+    def update_payload(self, hold_id: int, payload: dict[str, Any]) -> None:
+        self._db.execute("UPDATE holds SET payload = ? WHERE id = ?",
+                         (json.dumps(payload, default=str), hold_id))
+        self._db.commit()
+
     def close(self) -> None:
         self._db.close()
 

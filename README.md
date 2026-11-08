@@ -1,12 +1,18 @@
 # brain-surgery
 
-Route each prompt to the **smallest configured model that can handle it**, using one
-fast "system one" classifier pass, and **hold** anything no configured model can run
-for human review.
+Two tools on one classifier cascade and one review queue:
 
-This is the first piece of a larger tool. The same classifier contract, decision specs
-and review queue will drive the memory side next: scanning agent memories, tracing them
-to their source, and quarantining them (see [Roadmap](#roadmap)).
+- **Router.** Send each prompt to the **smallest configured model that can handle it**,
+  decided by one fast "system one" classifier pass. Anything no configured model can run
+  is **held** for human review.
+- **Memory.** Index every agent memory store down to the block, find what is duplicated
+  across agents, screen blocks in shadow, and **quarantine** individual blocks. A
+  quarantined block can be released back into place or excised for good, with a watch
+  for it growing back. See [Memory](#memory).
+
+**Nothing prints memory or prompt text unless you pass `--text`.** An agent session
+that runs these commands sees ids, paths, line ranges, hashes and scores, not the
+content being reviewed.
 
 ## How it works
 
@@ -124,10 +130,75 @@ for swapping classifiers. Writing the log never raises into the caller.
 
 ## Hold queue
 
-`holds_db` is SQLite. Held prompts store their text, facts, route and every attempt.
-Statuses follow one lifecycle shared with memories later:
-`held → released | excised | dismissed`. Keep the database on local disk; it holds
-the full prompt text.
+`holds_db` is SQLite. Held prompts store their text, facts, route and every attempt;
+quarantined memory blocks store their text and position. Both follow one lifecycle:
+`held → released | excised | dismissed`. Point `routing.yaml` and `memory.yaml` at the
+same file to review both in one queue. Keep it on local disk; it holds full text.
+
+## Memory
+
+```
+sources ──scan──► index (every block, keyed by content hash)
+                    │
+                    ├─ tree / dupes / blocks     what exists, where, how often loaded
+                    ├─ screen (shadow)           spec outcome per hash, recorded only
+                    └─ quarantine ──► hold ──┬─ release   back where it was
+                                             └─ excise    text scrubbed, hash watchlisted
+                                                           → scan reports any regrowth
+```
+
+**Sources** (`memory.yaml`):
+
+| kind | what | loaded |
+|---|---|---|
+| `claude_memory_dir` | one Claude Code memory folder | `MEMORY.md` always, topic files on demand |
+| `agent_memory_root` | a folder of per-agent memory folders (`memory: project` subagents) | same, per agent |
+| `files` | explicit files / globs, e.g. CLAUDE.md | always (configurable) |
+| `skills` | `*/SKILL.md` | front-matter always (it is listed), body on demand |
+| `markdown_dir` | any markdown tree, e.g. a notes vault | on demand (configurable) |
+
+`loaded` becomes an **exposure** weight (3 always, 1 on demand, 0 never). An always-loaded
+block is in every session; that's where a problem block costs most.
+
+A source can carry `managed_by:` for a **deployed or generated copy**, such as a
+CLAUDE.md that Ansible copies from a repo. Quarantine refuses to edit it and names the real
+source instead, because the next deploy would put the content straight back. `--force`
+overrides.
+
+**Blocks** are frontmatter, headings, list items (with continuation lines), table rows,
+fenced code and paragraphs. A block is identified by its content hash and occurrence
+number, not its line number. Agents keep writing to these files, and line numbers
+drift between a scan and a quarantine; the hash is what gets matched.
+
+**Quarantine** takes the chosen blocks out of their files, so no agent loads them, and
+holds them with their position: the hashes of the blocks either side. Writes are
+compare-and-swap: the file is re-read before writing, and nothing is written if an agent
+changed it in between. The new content goes to a temporary file that is then renamed
+into place. **Release** puts a block back between its old neighbours, even if the file has
+changed since. **Excise** scrubs the text from the hold and watchlists the hash; every
+later `scan` reports the block if it reappears anywhere (exit code 10).
+
+**Shadow screen** runs a decision spec (`examples/specs/memory.screen.yaml`) over every
+block not yet screened, once per distinct hash, so identical copies across agents cost
+one decision. It **only records** outcomes; nothing is quarantined automatically. Your
+quarantine, release and excise calls are the labels for calibrating it. The decision
+log records hashes and block ids, never the text. The example spec's `restricted_topic`
+question is a placeholder: write your own topics into it, concretely.
+
+State files (`index_db`, `holds_db`, `decision_log_dir`) must sit outside every scanned
+root; loading the config fails otherwise, so quarantined text can't be scanned back in.
+
+```bash
+M="brain-surgery memory --config examples/memory.yaml"
+$M scan                                   # index; exit 10 if excised content grew back
+$M tree [--agent A] [--source S]          # files, exposure, block counts, flagged
+$M dupes                                  # blocks held identically in several files
+$M blocks --file PATH | --contains STR | --hash H | --outcome quarantine   [--text]
+$M quarantine --id ID... | --file PATH | --hash H  --reason "why"   [--force]
+$M release HOLD_ID                        # put it back
+$M excise HOLD_ID --note "confirmed"      # scrub + watch
+$M screen [--limit N] | --summary         # shadow screen
+```
 
 ## Use
 
@@ -160,16 +231,18 @@ res = r.dispatch("Rename the backup job.")         # res.status: completed | hel
 .venv/bin/python -m pytest -q
 ```
 
-Everything runs against in-process fake servers and a fake SDK client, using harmless
-sample prompts. No network and no real model calls.
+Everything runs against in-process fake servers, a fake SDK client and a made-up memory
+tree, using harmless sample text. No network and no real model calls.
 
 ## Roadmap
 
-- **Memory side:** source adapters (Claude Code memory folders, CLAUDE.md, skills, agent
-  memory, markdown vaults), a line-level index keyed by content hash, a quarantine
-  lifecycle on the shared hold queue, and provenance tracing back to the source of each
-  memory.
-- **Memory screen spec** run in shadow on the same cascade; labels from
-  quarantine/release decisions feed calibration and, later, a locally trained model.
+- **Provenance:** for each block, find the session that wrote it (Claude Code session
+  logs, git history), then what it was copied from, then repeat back to the root. Group the
+  index by root, so one fix covers every copy.
+- **Calibration:** turn quarantine, release and excise decisions into labelled data for
+  the memory screen; refit thresholds; later, a model trained locally.
+- **Write-time screen:** run the same spec as memories are written, and send a high
+  scorer straight to quarantine (once calibration clears the promotion gate).
 - **Scoping:** keep a memory but load it only into sessions on a designated model.
-- **Review page** on top of the hold queue (prompts and memories together).
+- **Review page** on the hold queue: prompts and memories together, with drill-down from
+  source to agent to file to block.

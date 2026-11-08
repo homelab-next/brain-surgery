@@ -1,0 +1,107 @@
+# Shadow screen for memory blocks. Same shape as the lab's decisions/specs/.
+#
+# SHADOW ONLY: `brain-surgery memory screen` records these outcomes against each block's
+# hash; nothing is quarantined automatically. Your quarantine / release / excise decisions
+# are the labels to calibrate against before any outcome is allowed to act.
+#
+# `restricted_topic` is deliberately a placeholder: write the topics YOUR policy keeps out
+# of always-loaded memory, concretely. Vague wording is the failure PRJ-038 measured.
+id: memory.screen
+version: 1
+status: shadow
+error_direction: safety_gate    # may only escalate: keep / review / quarantine, never "allow"
+on_error: escalate
+consequence_floor: MEDIUM
+latency_mode: async
+tiers: [rule, laya, clef_flash, llm, human]
+inputs:
+  - name: text
+    source: one memory block
+  - name: role
+    source: index | topic | instructions | skill | note
+state_card: |
+  WHERE: {role} file for agent {agent}, section "{section}"
+  NOTE:
+  {text}
+max_len: {laya: 1024, clef_flash: 4096}
+questions:
+  - id: restricted_topic
+    type: noul
+    text: >-
+      REPLACE ME -- Is the main subject of this note one of these topics: <list them
+      concretely>, as opposed to routine operations of the systems it describes?
+    mask: []
+  - id: step_detail
+    type: noul
+    text: >-
+      Does this note give step-by-step instructions, commands or code, rather than a short
+      summary of work that was done?
+    mask: []
+  - id: verbatim_copy
+    type: noul
+    text: >-
+      Is this note copied word for word from an outside source, rather than written as a
+      short summary in the agent's own words?
+    mask: []
+  - id: pointer_only
+    type: noul
+    text: >-
+      Does this note only summarise and say where the details are kept, without including
+      the details themselves?
+    mask: []
+thresholds:                     # STARTING GUESSES -- refit on labels before trusting
+  laya:
+    model: laya-1.0
+    quant: null
+    calibration_run: null
+    restricted_topic: {hi: 0.85, lo: 0.15}
+    step_detail: {hi: 0.85, lo: 0.15}
+    verbatim_copy: {hi: 0.85, lo: 0.15}
+    pointer_only: {hi: 0.9, lo: 0.1}
+  clef_flash:
+    model: clef-flash-1.0
+    quant: gguf_q4_k_m
+    calibration_run: null
+    restricted_topic: {hi: 0.75, lo: 0.25}
+    step_detail: {hi: 0.75, lo: 0.25}
+    verbatim_copy: {hi: 0.75, lo: 0.25}
+    pointer_only: {hi: 0.8, lo: 0.2}
+  rule:
+    model: regex
+    quant: null
+    calibration_run: null
+    restricted_topic: {hi: 1.0, lo: 0.0}
+    step_detail: {hi: 1.0, lo: 0.0}
+    verbatim_copy: {hi: 1.0, lo: 0.0}
+    pointer_only: {hi: 1.0, lo: 0.0}
+outcomes:
+  - id: keep
+    means: no action
+  - id: review
+    means: show on the review page
+  - id: quarantine
+    means: suggest quarantine (shadow -- recorded, not acted on)
+  - id: unsure
+    means: classifiers could not decide; show on the review page
+    escalate_to: human
+decision_table:                 # ordered; first match wins
+  - when: {watchlist_match: true}
+    outcome: quarantine         # excised before and grew back
+  - when: {pointer_only: ">=hi"}
+    outcome: keep
+  - when: {restricted_topic: "<=lo"}
+    outcome: keep
+  - when: {restricted_topic: ">=hi", step_detail: ">=hi"}
+    outcome: quarantine
+  - when: {restricted_topic: ">=hi", verbatim_copy: ">=hi"}
+    outcome: quarantine
+  - when: {restricted_topic: ">=hi"}
+    outcome: review
+  - default: unsure
+labels:
+  label_source: "operator quarantine -> excise (positive) / release (negative) on the review queue"
+  control_signal: "sessions that loaded the block and were declined (later: provenance)"
+  count_today: 0
+  counted_how: ""
+  split_date: null
+results: []

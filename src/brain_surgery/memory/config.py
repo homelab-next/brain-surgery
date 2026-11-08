@@ -24,6 +24,9 @@ class MemoryConfig:
     decision_log_dir: Path | None = None
     screen_spec: DecisionSpec | None = None
     classifiers: dict[str, Classifier] = field(default_factory=dict)
+    prov_logs: list[str] = field(default_factory=list)
+    prov_index_db: Path | None = None
+    prov_git: bool = False
 
 
 def load_memory_config(path: str | Path) -> MemoryConfig:
@@ -45,9 +48,15 @@ def load_memory_config(path: str | Path) -> MemoryConfig:
 
     index_db, holds_db = state("index_db", "state/memory.sqlite"), state("holds_db", "state/holds.sqlite")
     log_dir = state("decision_log_dir", "state/decisions") if raw.get("decision_log_dir") else None
+    prov = raw.get("provenance") or {}
+    prov_logs = [str((base / p).expanduser()) for p in (prov.get("logs") or [])]
+    prov_index_db = state("x", prov.get("index_db") or "state/provenance.sqlite") \
+        if prov else None
     check = {"index_db": index_db, "holds_db": holds_db}
     if log_dir:
         check["decision_log_dir"] = log_dir
+    if prov_index_db:
+        check["provenance.index_db"] = prov_index_db
     problems = check_outside_roots(sources, check)
     if problems:
         raise MemoryConfigError("; ".join(problems))
@@ -68,4 +77,6 @@ def load_memory_config(path: str | Path) -> MemoryConfig:
         except (KeyError, ValueError) as exc:
             raise MemoryConfigError(f"screen classifiers: {exc}") from exc
     return MemoryConfig(sources=sources, index_db=index_db, holds_db=holds_db,
-                        decision_log_dir=log_dir, screen_spec=spec, classifiers=classifiers)
+                        decision_log_dir=log_dir, screen_spec=spec, classifiers=classifiers,
+                        prov_logs=prov_logs, prov_index_db=prov_index_db,
+                        prov_git=bool(prov.get("git", False)))

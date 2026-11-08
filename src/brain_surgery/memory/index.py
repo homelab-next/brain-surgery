@@ -270,5 +270,13 @@ class MemoryIndex:
                  GROUP BY b.id ORDER BY f.path, b.ord"""
         return [dict(r) for r in self.db.execute(sql)]
 
+    def agent_for_path(self, path: str) -> str | None:
+        r = self.db.execute("SELECT agent FROM files WHERE path = ?", (path,)).fetchone()
+        return r["agent"] if r else None
+
+    def managed_for_path(self, path: str) -> str | None:
+        r = self.db.execute("SELECT managed_by FROM files WHERE path = ?", (path,)).fetchone()
+        return r["managed_by"] if r else None
+
     def close(self) -> None:
         self.db.close()

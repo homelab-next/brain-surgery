@@ -250,6 +250,45 @@ decided outcomes, the unsure rate, an expected-vs-actual confusion table and a
 per-scenario breakdown. If the screen ran without `decision_log_dir`, only the outcome
 metrics are available.
 
+## Provenance
+
+Trace a memory block back to what it was copied from, to a root you can act on, so one fix
+covers every copy instead of deleting block by block.
+
+```bash
+M="brain-surgery memory --config memory.yaml"
+$M trace --id BLOCK_ID          # one block's chain to its root (metadata; --text adds the block)
+$M roots [--all]                # group blocks by the root they trace to (default: review+quarantine)
+$M trace-eval --truth FILE      # grade roots against a truth file (from `synth --with-logs`)
+```
+
+Add a `provenance:` block to `memory.yaml` pointing `logs:` at your Claude Code session-log
+roots (dirs of `*.jsonl`). The reader pulls two things from each session: **writes** (a
+Write/Edit, with the file's content after the change) and **inputs** (what the session read
+first: file reads, web fetches, tool results, the CLAUDE.md / skills loaded as instructions,
+user messages). For a block it finds the earliest write whose file contained it (who wrote
+it, when, which agent), then the input that session read beforehand whose text best contains
+the block (what it came from), then repeats to a root:
+
+| root kind | means | what to do |
+|---|---|---|
+| `authored` | copied from a file no agent wrote (a register, a hand-written doc) | edit the source, regenerate/redeploy if generated, then quarantine the copies |
+| `managed` | a deployed/generated copy (`managed_by`), or loaded from a CLAUDE.md/skill | change it at the named source; a deploy would restore it |
+| `external` | from a web fetch or other outside feed | can't delete at source; filter where the feed enters |
+| `user` | from a chat message | quarantine and watchlist |
+| `composed` | the agent wrote it with no copied source found | quarantine; consider the instruction that makes the agent record it |
+| `unknown` | no session log covers it (logs expired) | quarantine and watch, or widen the log window |
+
+Matching is whitespace-normalized substring first (an exact copy, confidence 1.0), then
+token-shingle overlap (a paraphrase, lower confidence) -- local only, no model. A
+`managed_by` memory file is rooted at its source with no logs needed. With `git: true`, a
+block with no session log falls back to `git log` on its file for a commit/author hint.
+
+**Session logs expire** (Claude Code keeps them for a limited window), so start archiving
+them now if you want provenance to reach back; the trace of an old block without logs reads
+`unknown`. The provenance index stores log-derived text: keep it local, outside every
+scanned root (checked on load).
+
 ## Use
 
 ```bash
@@ -286,9 +325,6 @@ tree, using harmless sample text. No network and no real model calls.
 
 ## Roadmap
 
-- **Provenance:** for each block, find the session that wrote it (Claude Code session
-  logs, git history), then what it was copied from, then repeat back to the root. Group the
-  index by root, so one fix covers every copy.
 - **Calibration:** turn quarantine, release and excise decisions into labelled data for
   the memory screen; refit thresholds; later, a model trained locally.
 - **Write-time screen:** run the same spec as memories are written, and send a high

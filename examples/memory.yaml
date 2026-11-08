@@ -57,3 +57,10 @@ screen:
       kind: systemone
       url: http://127.0.0.1:8899
       timeout_s: 5
+
+# Optional: trace a memory back to its source (provenance).
+provenance:
+  logs:              # Claude Code session-log roots (dirs of *.jsonl, searched recursively)
+    - ~/.claude/projects
+  index_db: state/provenance.sqlite   # built from the logs; must be outside every scanned root
+  git: false         # when a block has no session log, try `git log` on its file for a hint

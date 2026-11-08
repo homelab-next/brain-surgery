@@ -279,7 +279,8 @@ class MemoryIndex:
         sql = """SELECT b.id, f.path, f.agent, b.start_line, b.end_line, b.hash,
                         MIN(w.hold_id) AS hold_id, MIN(w.kind) AS kind
                  FROM blocks b JOIN files f ON f.id = b.file_id JOIN watchlist w ON w.hash = b.hash
-                 WHERE w.kind = 'excised' OR (w.kind = 'quarantined' AND w.path = f.path)
+                 WHERE w.kind IN ('excised', 'superseded')
+                       OR (w.kind = 'quarantined' AND w.path = f.path)
                  GROUP BY b.id ORDER BY f.path, b.ord"""
         return [dict(r) for r in self.db.execute(sql)]
 

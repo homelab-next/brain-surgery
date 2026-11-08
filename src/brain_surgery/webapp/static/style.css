@@ -133,3 +133,10 @@ main { flex: 1; display: flex; min-height: 0; }
   main { flex-direction: column; } .map-col { border-right: none; border-bottom: 1px solid var(--line); min-height: 240px; }
   .tray { right: 0; } .holds { width: 100%; }
 }
+
+textarea.reword { width: 100%; min-height: 160px; margin: 8px 0; padding: 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg);
+  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+.rescreen-verdict { margin-top: 8px; font-size: 13px; font-weight: 600; }
+.rescreen-verdict.rk-keep { color: var(--ok); } .rescreen-verdict.rk-review { color: var(--r2); }
+.rescreen-verdict.rk-quarantine { color: var(--r3); } .rescreen-verdict.rk-unsure { color: var(--r1); }

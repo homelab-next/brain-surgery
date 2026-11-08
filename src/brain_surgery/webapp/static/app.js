@@ -275,6 +275,7 @@ async function loadHolds() {
       acts.append(el("button", { class: "ghost small", text: "open file", onclick: () => it.path && openFile(it.path) }));
       if (!state.readOnly) {
         acts.append(el("button", { class: "ghost small", text: "release", onclick: () => holdAction("release", it.id) }));
+        acts.append(el("button", { class: "ghost small", text: "reword", onclick: () => openReword(it.id) }));
         acts.append(el("button", { class: "danger small", text: "excise", onclick: () => holdAction("excise", it.id) }));
       }
     }
@@ -285,6 +286,38 @@ async function loadHolds() {
       acts,
     ]));
   }
+}
+async function openReword(id) {
+  let h; try { h = await api("hold?id=" + id); } catch (e) { return toast(e.message, "err"); }
+  const orig = h.payload.text || "";
+  const d = $("#detail"); d.replaceChildren();
+  d.append(el("div", { class: "fhead" }, [el("h2", { text: "reword hold " + id }),
+    el("div", { class: "fmeta" }, [el("span", { text: h.payload.agent || "" }),
+      el("span", { text: (h.payload.path || "").split("/").pop() })]),
+    el("div", { class: "frow" }, [el("button", { class: "ghost small", text: "← back", onclick: renderFile })])]);
+  const wrap = el("div", { class: "trace" });
+  wrap.append(el("p", { class: "muted", text: "Clarify or summarize to a pointer (e.g. “analysis done — details in the case file on the local tier”). Re-screen checks it against your local memory gate before it goes back." }));
+  const ta = el("textarea", { class: "reword" }); ta.value = orig;
+  wrap.append(ta);
+  const verdict = el("div", { class: "rescreen-verdict muted" });
+  const row = el("div", { class: "frow" }, [
+    el("button", { class: "ghost small", text: "re-screen", onclick: async () => {
+      try { const r = await postJSON("rescreen", { hold_id: id, replacement: ta.value });
+        verdict.className = "rescreen-verdict rk-" + r.outcome;
+        verdict.textContent = `would screen as: ${r.outcome}${r.resolved ? "" : " (unresolved)"}`;
+      } catch (e) { toast(e.message, "err"); } } }),
+    el("button", { class: "primary small", text: "release reworded", onclick: () => doRelease(id, ta.value) }),
+    el("button", { class: "ghost small", text: "release original", onclick: () => doRelease(id, null) }),
+  ]);
+  wrap.append(row, verdict);
+  d.append(wrap);
+}
+async function doRelease(id, replacement) {
+  if (replacement != null && !replacement.trim()) return toast("empty text — use excise to remove it", "err");
+  try { const r = await postJSON("release", { hold_id: id, note: "via review page", replacement });
+    toast(`hold ${id} released${r.reworded ? " (reworded; original watchlisted)" : ""}`, "ok");
+  } catch (e) { return toast(e.message, "err"); }
+  await refreshAll(); await loadHolds(); if (state.file) openFile(state.file.path); else $("#detail").replaceChildren();
 }
 async function holdAction(kind, id) {
   if (kind === "excise" && !confirm("Excise permanently? The held text is scrubbed and the block is watchlisted. Release it instead if unsure.")) return;

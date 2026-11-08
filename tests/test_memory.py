@@ -312,3 +312,74 @@ def test_quarantined_block_written_back_by_an_agent_is_reported(lab):
     idx.scan(cfg.sources)
     q.release(hid)
     assert idx.scan(cfg.sources).regrowth == []
+
+
+def test_release_with_reword_and_watch_original(lab):
+    cfg, idx, holds, q = open_lab(lab)
+    idx.scan(cfg.sources)
+    path = topic_path(lab)
+    tgt = [b for b in idx.blocks(file_path=str(path)) if b["section"] == "Backups > Retention"
+           and b["kind"] == "paragraph"][0]
+    original = [b for b in idx.blocks(file_path=str(path), with_text=True)
+                if b["id"] == tgt["id"]][0]["text"]
+    hid = q.quarantine([tgt["id"]], "test").held[0]["hold_id"]
+    out = q.release(hid, replacement="Snapshots: see the retention policy in the ops doc.")
+    assert out["reworded"] and out["watch_original"]
+    text = path.read_text()
+    assert "see the retention policy" in text and original not in text
+    assert holds.get(hid).status == "released" and holds.get(hid).payload["released_as"]
+    # the ORIGINAL wording reappearing anywhere is now reported as regrowth
+    assert idx.scan(cfg.sources).regrowth == []
+    other = lab / "agents" / "alpha" / "notes.md"
+    other.write_text(other.read_text() + "\n\n" + original + "\n")
+    regrew = idx.scan(cfg.sources).regrowth
+    assert [(r["hold_id"], r["kind"]) for r in regrew] == [(hid, "superseded")]
+
+
+def test_plain_release_restores_verbatim_and_does_not_watch(lab):
+    cfg, idx, holds, q = open_lab(lab)
+    idx.scan(cfg.sources)
+    path = topic_path(lab)
+    before = path.read_text()
+    tgt = [b for b in idx.blocks(file_path=str(path)) if b["kind"] == "item"][0]
+    hid = q.quarantine([tgt["id"]], "t").held[0]["hold_id"]
+    out = q.release(hid)
+    assert not out["reworded"] and path.read_text() == before
+
+
+def test_screen_one_previews_without_recording(lab):
+    from brain_surgery.memory.screen import screen_one
+    from brain_surgery.classify import StaticClassifier
+    from brain_surgery.spec import load_spec
+    cfg, idx, holds, q = open_lab(lab)
+    idx.scan(cfg.sources)
+    spec = load_spec(lab / "specs" / "memory.screen.yaml")
+
+    def ans(state, questions):
+        flag = "Resolver" in state
+        return {"restricted_topic": {"noul": 0.95 if flag else 0.02}, "step_detail": {"noul": 0.9},
+                "verbatim_copy": {"noul": 0.1}, "pointer_only": {"noul": 0.1}}
+
+    clf = {"laya": StaticClassifier("laya", ans)}
+    bad = screen_one(spec, clf, "Resolver is the Pi and here are the steps to reach it.")
+    good = screen_one(spec, clf, "Network notes: see the shared doc on the local tier.")
+    assert bad["outcome"] in ("review", "quarantine") and good["outcome"] == "keep"
+    assert idx.db.execute("SELECT COUNT(*) FROM screen").fetchone()[0] == 0   # recorded nothing
+
+
+def test_cli_rescreen_and_release_replace(lab, tmp_path, capsys):
+    c = str(lab / "memory.yaml")
+    cfg, idx, holds, q = open_lab(lab)
+    idx.scan(cfg.sources)
+    path = topic_path(lab)
+    tgt = [b for b in idx.blocks(file_path=str(path)) if b["kind"] == "item"][0]
+    hid = q.quarantine([tgt["id"]], "cli").held[0]["hold_id"]
+    # the real config has no screen classifiers wired to a live server; rescreen the held
+    # text still runs the cascade (errors escalate to unsure) and records nothing
+    assert main(["memory", "--config", c, "rescreen", str(hid)]) == 0
+    assert '"outcome"' in capsys.readouterr().out
+    rw = tmp_path / "rw.txt"
+    rw.write_text("See the ops doc for the job list.")
+    assert main(["memory", "--config", c, "release", str(hid), "--replace", str(rw)]) == 0
+    assert '"reworded": true' in capsys.readouterr().out
+    assert "See the ops doc" in path.read_text()

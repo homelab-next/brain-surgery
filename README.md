@@ -180,6 +180,30 @@ it came from: typically an agent saving back a copy it read before the quarantin
 **Excise** scrubs the text from the hold and watchlists the hash; every later `scan`
 reports the block if it reappears anywhere. Any regrowth makes `scan` exit with code 10.
 
+A held block then leaves the queue one of three ways:
+
+* **release** — restore the original wording, verbatim, between its old neighbours.
+* **release reworded** — restore an *edited* version instead (`release --replace FILE`, or the
+  reword panel in the web Holds drawer). Use it to **clarify** a false positive or to
+  **summarize to a pointer** — "analysis done; details in the case file on the local tier" —
+  which keeps what the agent needs (that the work happened, and where it lives) and drops the
+  detail that didn't belong in always-loaded memory. The original wording is watchlisted, so a
+  later scan reports it if an agent writes it back.
+* **excise** — remove it for good; the text is scrubbed and the hash watchlisted everywhere.
+
+Before releasing, **`rescreen`** previews what the screen would say about the held text or a
+reword (`memory rescreen HOLD [--replace FILE]`, or "re-screen" in the panel) — it runs the
+same cascade and **records nothing**. This checks the block against *your own local memory
+gate* (Laya/Clef), not any provider's safety classifier; it is for confirming a false positive
+reads as benign, or that a pointer-only rewrite no longer carries the detail — not for tuning
+sensitive content to slip past a safety system, which is evasion and stops working the moment
+the classifier changes. If a memory genuinely needs its full detail, keep it on the local tier
+(and route the work that needs it to a permitted model) rather than rewording to hide it.
+
+**`scan` / `rescan`** re-indexes the files after you or an agent change them — it is how a fix
+at the *source* (editing a root file, then rescanning) shows up, and how regrowth is detected.
+It never touches holds.
+
 **Shadow screen** runs a decision spec (`examples/specs/memory.screen.yaml`) over every
 block not yet screened, once per distinct hash, so identical copies across agents cost
 one decision. It **only records** outcomes; nothing is quarantined automatically. Your

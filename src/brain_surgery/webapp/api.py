@@ -197,13 +197,35 @@ class WebContext:
             raise ApiError(400, "a reason is required")
         return self.quarantine_engine.quarantine(block_ids, reason, force=force).to_dict()
 
-    def do_release(self, hold_id: int, note: str | None = None) -> dict[str, Any]:
+    def do_release(self, hold_id: int, note: str | None = None,
+                   replacement: str | None = None) -> dict[str, Any]:
         self._guard()
         from ..memory.quarantine import QuarantineError
         try:
-            return self.quarantine_engine.release(hold_id, note)
+            return self.quarantine_engine.release(hold_id, note, replacement=replacement)
         except QuarantineError as exc:
             raise ApiError(409, str(exc)) from exc
+
+    def rescreen(self, text: str, *, role: str = "note", agent: str = "*",
+                 section: str = "") -> dict[str, Any]:
+        """Preview what the screen would say about candidate text (a held block, or a
+        reworded version of it) -- recorded nowhere, changes nothing."""
+        if self.cfg.screen_spec is None:
+            raise ApiError(400, "no screen configured (add a screen.spec to memory.yaml)")
+        from ..memory.screen import screen_one
+        return screen_one(self.cfg.screen_spec, self.cfg.classifiers, text,
+                          role=role, agent=agent, section=section)
+
+    def rescreen_hold(self, hold_id: int, replacement: str | None = None) -> dict[str, Any]:
+        h = self.holds.get(hold_id)
+        if h is None or h.kind != "memory":
+            raise ApiError(404, "no such memory hold")
+        p = h.payload
+        text = replacement if (replacement and replacement.strip()) else p.get("text")
+        if not text:
+            raise ApiError(400, "nothing to screen (the hold's text was excised)")
+        return self.rescreen(text, role=p.get("role") or "note", agent=p.get("agent") or "*",
+                             section=p.get("section") or "")
 
     def do_excise(self, hold_id: int, note: str | None = None) -> dict[str, Any]:
         self._guard()
@@ -215,6 +237,10 @@ class WebContext:
 
     def do_dismiss(self, hold_id: int, note: str | None = None) -> dict[str, Any]:
         self._guard()
+        h = self.holds.get(hold_id)
+        if h is not None and h.kind == "memory":
+            raise ApiError(409, "a memory hold is resolved by release (restore / reword) or "
+                                "excise, not dismiss")
         try:
             h = self.holds.resolve(hold_id, "dismissed", note)
         except (KeyError, ValueError) as exc:

@@ -108,7 +108,15 @@ def make_server(ctx: WebContext, host: str = "127.0.0.1", port: int = 8795) -> T
                         req.get("block_ids") or [], req.get("reason") or "",
                         bool(req.get("force", False))))
                 if name == "release":
-                    return self._json(200, ctx.do_release(int(req["hold_id"]), req.get("note")))
+                    return self._json(200, ctx.do_release(int(req["hold_id"]), req.get("note"),
+                                                          req.get("replacement")))
+                if name == "rescreen":
+                    if req.get("hold_id") is not None:
+                        return self._json(200, ctx.rescreen_hold(int(req["hold_id"]),
+                                                                 req.get("replacement")))
+                    return self._json(200, ctx.rescreen(
+                        req.get("text") or "", role=req.get("role", "note"),
+                        agent=req.get("agent", "*"), section=req.get("section", "")))
                 if name == "excise":
                     return self._json(200, ctx.do_excise(int(req["hold_id"]), req.get("note")))
                 if name == "dismiss":

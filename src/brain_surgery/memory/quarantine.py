@@ -140,23 +140,30 @@ class Quarantine:
             res.held.append({"hold_id": hid, "block_id": r["id"], "path": str(path)})
 
     # -- release ------------------------------------------------------------------------
-    def release(self, hold_id: int, note: str | None = None) -> dict[str, Any]:
+    def release(self, hold_id: int, note: str | None = None, *, replacement: str | None = None,
+                watch_original: bool = True) -> dict[str, Any]:
+        """Put a quarantined block back where it was. With ``replacement`` (a reworded,
+        clarified or pointer-only version), the new text goes in instead of the original,
+        and -- unless ``watch_original`` is false -- the original wording is watchlisted so
+        a scan reports it if it ever comes back. Plain release restores the original text."""
         h = self._open_hold(hold_id)
         p = h.payload
         if p.get("text") is None:
             raise QuarantineError(f"hold {hold_id} has no text to restore")
+        reword = replacement is not None and replacement.strip() and replacement != p["text"]
+        restore_text = replacement if reword else p["text"]
+        restore_kind = split_blocks(restore_text)[0].kind if reword and split_blocks(restore_text) \
+            else p.get("kind", "paragraph")
         path = Path(p["path"])
         raw = path.read_bytes() if path.exists() else b""
         sha = _sha(raw)
         text = raw.decode("utf-8", errors="replace")
         blocks = split_blocks(text)
-        # Present already if the file again holds as many copies as it did before this
-        # block was taken out (an agent re-wrote it, or it was restored by hand).
-        if sum(b.hash == p["hash"] for b in blocks) >= p.get("copies_before", 1):
+        if not reword and sum(b.hash == p["hash"] for b in blocks) >= p.get("copies_before", 1):
             where = "already present"
         else:
             after = self._insertion_line(blocks, p)
-            new_text = insert_block(text, p["text"], after, p.get("kind", "paragraph"))
+            new_text = insert_block(text, restore_text, after, restore_kind)
             if path.exists():
                 _write_if_unchanged(path, sha, new_text)
             else:
@@ -164,9 +171,16 @@ class Quarantine:
                 _write_if_unchanged(path, _sha(b""), new_text)
             where = f"after line {after}"
         self.index.unwatch(p["hash"], hold_id)
+        if reword and watch_original:
+            # tell me if the ORIGINAL wording reappears anywhere after a reword
+            self.index.watch(p["hash"], hold_id, "superseded", p.get("path"),
+                             f"superseded by reword (hold {hold_id})")
+            p = {**p, "released_as": restore_text}
+            self.holds.update_payload(hold_id, p)
         self.holds.resolve(hold_id, "released", note)
         self.index.reindex_path(path)
-        return {"hold_id": hold_id, "path": str(path), "restored": where}
+        return {"hold_id": hold_id, "path": str(path), "restored": where,
+                "reworded": bool(reword), "watch_original": bool(reword and watch_original)}
 
     @staticmethod
     def _insertion_line(blocks: list[Block], p: dict[str, Any]) -> int:

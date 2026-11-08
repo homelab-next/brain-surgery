@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
 from ..decision_log import DecisionLog
@@ -92,7 +93,33 @@ def cmd_quarantine(args: argparse.Namespace) -> int:
 
 def cmd_release(args: argparse.Namespace) -> int:
     _, idx, holds = _open(args)
-    print(json.dumps(Quarantine(idx, holds).release(args.hold_id, args.note), indent=2))
+    replacement = Path(args.replace).read_text() if args.replace else None
+    print(json.dumps(Quarantine(idx, holds).release(args.hold_id, args.note,
+                                                    replacement=replacement), indent=2))
+    return 0
+
+
+def cmd_rescreen(args: argparse.Namespace) -> int:
+    cfg, idx, holds = _open(args)
+    if cfg.screen_spec is None:
+        print("no screen.spec in the memory config")
+        return 1
+    from .screen import screen_one
+    replacement = Path(args.replace).read_text() if args.replace else None
+    h = holds.get(args.hold_id)
+    if h is None or h.kind != "memory":
+        print(f"no memory hold {args.hold_id}")
+        return 1
+    p = h.payload
+    text = replacement if replacement else p.get("text")
+    if not text:
+        print("nothing to screen (text was excised)")
+        return 1
+    res = screen_one(cfg.screen_spec, cfg.classifiers, text, role=p.get("role") or "note",
+                     agent=p.get("agent") or "*", section=p.get("section") or "")
+    print(json.dumps({"hold_id": args.hold_id, "candidate": "replacement" if replacement else "held text",
+                      "outcome": res["outcome"], "resolved": res["resolved"],
+                      "answers": res["worst"]["answers"]}, indent=2))
     return 0
 
 
@@ -308,8 +335,14 @@ def register(sub: argparse._SubParsersAction) -> None:
     s.add_argument("--force", action="store_true", help="also edit managed (deployed) copies")
     s.set_defaults(func=cmd_quarantine)
 
-    s = ms.add_parser("release", help="put a quarantined block back")
+    s = ms.add_parser("rescreen", help="preview the screen outcome of a hold's text or a reword")
     s.add_argument("hold_id", type=int)
+    s.add_argument("--replace", help="file with the reworded candidate (default: the held text)")
+    s.set_defaults(func=cmd_rescreen)
+
+    s = ms.add_parser("release", help="put a quarantined block back (optionally reworded)")
+    s.add_argument("hold_id", type=int)
+    s.add_argument("--replace", help="file with reworded text to restore instead of the original")
     s.add_argument("--note")
     s.set_defaults(func=cmd_release)
 

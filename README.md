@@ -250,6 +250,33 @@ decided outcomes, the unsure rate, an expected-vs-actual confusion table and a
 per-scenario breakdown. If the screen ran without `decision_log_dir`, only the outcome
 metrics are available.
 
+## Review page
+
+A self-hosted page over the index and hold queue: see where risky memory lives, drill in,
+select blocks across agents, and quarantine/release/excise — the visual front end to
+everything above.
+
+```bash
+brain-surgery memory --config memory.yaml web [--host 127.0.0.1] [--port 8795] [--read-only]
+```
+
+- **Risk band** — the flagged groups (quarantine/review), cross-agent duplicates and
+  regrowth, each as a card with a sample, copy count and agents. Click one to drop every
+  copy across agents into the staging tray.
+- **Treemap** — source → agent → file, sized by bytes, colored by worst risk; click to
+  zoom, breadcrumb to go back, click a file to open it. A ⚙ marks a managed copy.
+- **File view** — the blocks with a risk gutter; click to select, shift-click for a range,
+  "select flagged" for all; each block has a **trace** link to its provenance.
+- **Staging tray** — the current selection; add a reason and quarantine (with a force
+  toggle for managed copies).
+- **Holds drawer** — held memories with release / excise (excise confirms); filter by status.
+- **Roots** — flagged blocks grouped by the source they trace to, each with its fix.
+
+It is the one place that shows memory text (it is the review surface). It **binds to
+127.0.0.1 and has no auth of its own** — put it behind your proxy and login (Caddy +
+Authentik on the reference fleet); it can read every agent's memory and, without
+`--read-only`, change it. `--read-only` disables quarantine, release, excise and rescan.
+
 ## Provenance
 
 Trace a memory block back to what it was copied from, to a root you can act on, so one fix
@@ -330,5 +357,3 @@ tree, using harmless sample text. No network and no real model calls.
 - **Write-time screen:** run the same spec as memories are written, and send a high
   scorer straight to quarantine (once calibration clears the promotion gate).
 - **Scoping:** keep a memory but load it only into sessions on a designated model.
-- **Review page** on the hold queue: prompts and memories together, with drill-down from
-  source to agent to file to block.

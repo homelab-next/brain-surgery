@@ -227,6 +227,23 @@ def cmd_trace_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_web(args: argparse.Namespace) -> int:
+    from ..webapp.api import WebContext
+    from ..webapp.server import make_server
+
+    cfg = load_memory_config(args.config)
+    ctx = WebContext(cfg, read_only=args.read_only)
+    srv = make_server(ctx, args.host, args.port)
+    mode = " (read-only)" if args.read_only else ""
+    print(f"brain-surgery memory review on http://{args.host}:{srv.server_address[1]}{mode}")
+    print("  no auth of its own — keep it behind your proxy/login; it can read and change memory")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
 def cmd_synth(args: argparse.Namespace) -> int:
     from .synth import generate
 
@@ -329,3 +346,9 @@ def register(sub: argparse._SubParsersAction) -> None:
     s.add_argument("--truth", required=True, help="provenance_truth.jsonl (from `synth --with-logs`)")
     s.add_argument("--rebuild", action="store_true")
     s.set_defaults(func=cmd_trace_eval)
+
+    s = ms.add_parser("web", help="serve the review web page (treemap, groups, quarantine, trace)")
+    s.add_argument("--host", default="127.0.0.1")
+    s.add_argument("--port", type=int, default=8795)
+    s.add_argument("--read-only", action="store_true", help="disable quarantine/release/excise/rescan")
+    s.set_defaults(func=cmd_web)

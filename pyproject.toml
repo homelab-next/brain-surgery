@@ -25,4 +25,4 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.setuptools.package-data]
-brain_surgery = ["data/*.yaml"]
+brain_surgery = ["data/*.yaml", "webapp/static/*"]

@@ -170,6 +170,19 @@ class MemoryIndex:
         GROUP BY f.id ORDER BY f.source_id, f.agent, f.path"""
         return [dict(r) for r in self.db.execute(sql)]
 
+    def file_risks(self) -> dict[str, int]:
+        """path -> worst screen severity among its blocks (quarantine 3, review 2,
+        unsure 1, else 0); a block on the excised watchlist forces 3."""
+        sql = """
+        SELECT f.path AS path, MAX(CASE s.outcome WHEN 'quarantine' THEN 3 WHEN 'review' THEN 2
+                                     WHEN 'unsure' THEN 1 ELSE 0 END) AS screen,
+               MAX(CASE WHEN w.hash IS NOT NULL THEN 3 ELSE 0 END) AS regrew
+        FROM files f LEFT JOIN blocks b ON b.file_id = f.id
+        LEFT JOIN (SELECT hash, outcome FROM screen GROUP BY hash) s ON s.hash = b.hash
+        LEFT JOIN (SELECT DISTINCT hash FROM watchlist WHERE kind = 'excised') w ON w.hash = b.hash
+        GROUP BY f.id"""
+        return {r["path"]: max(r["screen"] or 0, r["regrew"] or 0) for r in self.db.execute(sql)}
+
     def duplicates(self, min_files: int = 2) -> list[dict[str, Any]]:
         sql = """
         SELECT b.hash, COUNT(DISTINCT b.file_id) AS files, COUNT(DISTINCT f.agent) AS agents,

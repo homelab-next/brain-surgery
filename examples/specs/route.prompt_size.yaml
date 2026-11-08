@@ -1,0 +1,90 @@
+# Which size of model does this prompt need? Same shape as the lab's decisions/specs/.
+# The thresholds below are STARTING GUESSES (calibration_run: null) -- run in shadow,
+# label, and refit before trusting them (decision-training-plan.md §8).
+id: route.prompt_size
+version: 1
+status: draft
+error_direction: noise_gate     # a wrong 'small' costs a retry; on any doubt it escalates
+on_error: escalate
+consequence_floor: LOW
+latency_mode: inline
+tiers: [rule, laya, clef_flash, llm]
+inputs:
+  - name: text
+    source: the prompt as submitted
+state_card: |
+  REQUEST:
+  {text}
+max_len: {laya: 1024, clef_flash: 4096}
+questions:
+  - id: multi_step
+    type: noul
+    text: >-
+      Does this request need several dependent steps -- for example plan, then do, then
+      check -- rather than one direct answer?
+    mask: []
+  - id: writes_code
+    type: noul
+    text: >-
+      Does this request ask for code to be written or changed, as opposed to explained,
+      reviewed or summarised?
+    mask: []
+  - id: broad_context
+    type: noul
+    text: >-
+      Does answering require reading and combining several long documents or sources,
+      rather than the request text alone?
+    mask: []
+thresholds:
+  laya:
+    model: laya-1.0
+    quant: null
+    calibration_run: null
+    multi_step: {hi: 0.85, lo: 0.15}
+    writes_code: {hi: 0.85, lo: 0.15}
+    broad_context: {hi: 0.85, lo: 0.15}
+  clef_flash:
+    model: clef-flash-1.0
+    quant: gguf_q4_k_m
+    calibration_run: null
+    multi_step: {hi: 0.75, lo: 0.25}
+    writes_code: {hi: 0.75, lo: 0.25}
+    broad_context: {hi: 0.75, lo: 0.25}
+  rule:
+    model: regex
+    quant: null
+    calibration_run: null
+    multi_step: {hi: 1.0, lo: 0.0}
+    writes_code: {hi: 1.0, lo: 0.0}
+    broad_context: {hi: 1.0, lo: 0.0}
+outcomes:
+  - id: small
+    means: smallest local model
+  - id: medium
+    means: larger local model first
+  - id: large
+    means: most capable configured model
+  - id: unsure
+    means: classifiers could not decide; larger local model first, then the capable model
+    escalate_to: large
+decision_table:               # ordered; first match wins
+  - when: {prompt_chars: ">24000"}
+    outcome: large
+  - when: {broad_context: ">=hi"}
+    outcome: large
+  - when: {multi_step: ">=hi", writes_code: ">=hi"}
+    outcome: large
+  - when: {multi_step: ">=hi"}
+    outcome: medium
+  - when: {writes_code: ">=hi"}
+    outcome: medium
+  - when: {multi_step: "<=lo", writes_code: "<=lo", broad_context: "<=lo"}
+    outcome: small
+  - default: unsure
+labels:
+  label_source: "which target the operator re-ran a held or poor answer on"
+  control_signal: ""
+  count_today: 0
+  counted_how: ""
+  split_date: null
+results: []

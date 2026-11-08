@@ -1,0 +1,25 @@
+[project]
+name = "brain-surgery"
+version = "0.1.0"
+description = "Route prompts to the smallest configured model a fast classifier says can handle them, and hold what nothing can run."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6"]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=2.6"]
+dev = ["pytest>=8", "anthropic>=2.6"]
+
+[project.scripts]
+brain-surgery = "brain_surgery.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

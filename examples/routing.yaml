@@ -1,0 +1,54 @@
+# Example router config. Paths are relative to this file. Replace hosts and models
+# with your own; nothing here is specific to one lab.
+spec: specs/route.prompt_size.yaml
+
+# Tier name -> classifier. Tier names must match the spec's `tiers:`; a tier with no
+# entry here is skipped. Any server speaking POST /v1/systemone works (Laya, Clef, or a
+# model you trained yourself behind the same API).
+classifiers:
+  rule:
+    kind: rules
+    rules:
+      writes_code:
+        - {pattern: '(?i)\b(refactor|implement|write (a|the) (function|script|test))\b', answer: yes}
+  laya:
+    kind: systemone
+    url: http://127.0.0.1:8899
+    timeout_s: 5
+  clef_flash:
+    kind: systemone
+    url: http://127.0.0.1:8080
+    model: clef-flash
+    timeout_s: 10
+
+# Where prompts run. data_tier: local-only | cloud-allowed.
+targets:
+  local-small:
+    kind: openai
+    base_url: http://127.0.0.1:1234/v1
+    model: small-local-model
+    data_tier: local-only
+  local-large:
+    kind: openai
+    base_url: http://127.0.0.1:8000/v1
+    model: large-local-model
+    data_tier: local-only
+  cloud:
+    kind: anthropic
+    model: claude-opus-5-5
+    api_key_env: ANTHROPIC_API_KEY
+    # server_fallback defaults to "default" for models that support it: on a decline the
+    # API re-runs the request on the model Anthropic designates for that category.
+    # Set "off" to disable.
+
+# Every spec outcome needs a route: an ordered list (cheapest first), or `hold`.
+routes:
+  small: [local-small, local-large, cloud]
+  medium: [local-large, cloud]
+  large: [cloud]
+  unsure: [local-large, cloud]
+  # A route can be pinned local: config loading rejects any cloud target in it.
+  # private: {targets: [local-large], data_tier: local-only}
+
+holds_db: state/holds.sqlite
+decision_log_dir: state/decisions

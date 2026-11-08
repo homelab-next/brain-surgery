@@ -1,7 +1,8 @@
 """Quarantine, release and excise memory blocks.
 
 * **quarantine** -- take blocks out of the live file, so no agent loads them, and hold
-  them (text and position) in the shared hold queue. Reversible.
+  them (text and position) in the shared hold queue. Reversible. Until it is resolved,
+  a scan reports the block if it reappears in that file.
 * **release**    -- put a quarantined block back where it was. Its old neighbours'
   hashes are used as anchors, so it lands in the right place even if the file moved on.
 * **excise**     -- confirm the removal. The text is scrubbed from the hold, and the
@@ -135,6 +136,7 @@ class Quarantine:
         for r, _b, payload in records:
             payload["file_sha_after"] = _sha(new_text.encode("utf-8"))
             hid = self.holds.add("memory", reason, payload)
+            self.index.watch(payload["hash"], hid, "quarantined", str(path), reason)
             res.held.append({"hold_id": hid, "block_id": r["id"], "path": str(path)})
 
     # -- release ------------------------------------------------------------------------
@@ -161,6 +163,7 @@ class Quarantine:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 _write_if_unchanged(path, _sha(b""), new_text)
             where = f"after line {after}"
+        self.index.unwatch(p["hash"], hold_id)
         self.holds.resolve(hold_id, "released", note)
         self.index.reindex_path(path)
         return {"hold_id": hold_id, "path": str(path), "restored": where}
@@ -188,7 +191,7 @@ class Quarantine:
     def excise(self, hold_id: int, note: str | None = None) -> dict[str, Any]:
         h = self._open_hold(hold_id)
         payload = dict(h.payload)
-        self.index.watch(payload["hash"], hold_id, note)
+        self.index.watch(payload["hash"], hold_id, "excised", payload.get("path"), note)
         payload["text"] = None
         payload["excised"] = True
         self.holds.update_payload(hold_id, payload)

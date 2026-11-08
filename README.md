@@ -175,8 +175,10 @@ holds them with their position: the hashes of the blocks either side. Writes are
 compare-and-swap: the file is re-read before writing, and nothing is written if an agent
 changed it in between. The new content goes to a temporary file that is then renamed
 into place. **Release** puts a block back between its old neighbours, even if the file has
-changed since. **Excise** scrubs the text from the hold and watchlists the hash; every
-later `scan` reports the block if it reappears anywhere (exit code 10).
+changed since. While a block is quarantined, `scan` reports it if it reappears in the file
+it came from: typically an agent saving back a copy it read before the quarantine.
+**Excise** scrubs the text from the hold and watchlists the hash; every later `scan`
+reports the block if it reappears anywhere. Any regrowth makes `scan` exit with code 10.
 
 **Shadow screen** runs a decision spec (`examples/specs/memory.screen.yaml`) over every
 block not yet screened, once per distinct hash, so identical copies across agents cost

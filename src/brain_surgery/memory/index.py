@@ -5,7 +5,9 @@ outside every scanned root and treat it with the same care as the memories thems
 
 Scans are incremental: a file whose sha256 is unchanged keeps its blocks; a changed file
 has its blocks replaced; a file that disappeared is dropped. Each scan also reports
-**regrowth** -- blocks whose hash is on the watchlist of excised content.
+**regrowth**: an excised block reappearing anywhere, or a quarantined block reappearing
+in the file it was taken from (typically an agent saving back a copy it had read before
+the quarantine).
 """
 from __future__ import annotations
 
@@ -41,7 +43,8 @@ CREATE TABLE IF NOT EXISTS screen (
     ts TEXT NOT NULL, PRIMARY KEY (hash, spec_id, spec_version)
 );
 CREATE TABLE IF NOT EXISTS watchlist (
-    hash TEXT PRIMARY KEY, added_at TEXT NOT NULL, hold_id INTEGER, note TEXT
+    hash TEXT NOT NULL, hold_id INTEGER NOT NULL, kind TEXT NOT NULL, path TEXT,
+    added_at TEXT NOT NULL, note TEXT, PRIMARY KEY (hash, hold_id)
 );
 """
 
@@ -241,18 +244,30 @@ class MemoryIndex:
         return [dict(r) for r in self.db.execute(sql)]
 
     # -- watchlist ---------------------------------------------------------------------
-    def watch(self, hash: str, hold_id: int | None, note: str | None = None) -> None:
-        self.db.execute("INSERT OR REPLACE INTO watchlist VALUES (?,?,?,?)",
-                        (hash, _now(), hold_id, note))
+    # kind 'quarantined': watched in its own file until released or excised.
+    # kind 'excised':     watched everywhere, for good.
+    def watch(self, hash: str, hold_id: int, kind: str, path: str | None = None,
+              note: str | None = None) -> None:
+        self.db.execute("INSERT OR REPLACE INTO watchlist VALUES (?,?,?,?,?,?)",
+                        (hash, hold_id, kind, path, _now(), note))
         self.db.commit()
 
-    def watched(self, hash: str) -> bool:
-        return self.db.execute("SELECT 1 FROM watchlist WHERE hash = ?", (hash,)).fetchone() is not None
+    def unwatch(self, hash: str, hold_id: int) -> None:
+        self.db.execute("DELETE FROM watchlist WHERE hash = ? AND hold_id = ?", (hash, hold_id))
+        self.db.commit()
+
+    def watched(self, hash: str, kind: str = "excised") -> bool:
+        return self.db.execute("SELECT 1 FROM watchlist WHERE hash = ? AND kind = ?",
+                               (hash, kind)).fetchone() is not None
 
     def regrowth(self) -> list[dict[str, Any]]:
-        sql = """SELECT b.id, f.path, f.agent, b.start_line, b.end_line, b.hash, w.hold_id
+        # Known edge: two identical blocks quarantined from the SAME file under two holds;
+        # releasing one reports the other as regrown until it, too, is resolved.
+        sql = """SELECT b.id, f.path, f.agent, b.start_line, b.end_line, b.hash,
+                        MIN(w.hold_id) AS hold_id, MIN(w.kind) AS kind
                  FROM blocks b JOIN files f ON f.id = b.file_id JOIN watchlist w ON w.hash = b.hash
-                 ORDER BY f.path, b.ord"""
+                 WHERE w.kind = 'excised' OR (w.kind = 'quarantined' AND w.path = f.path)
+                 GROUP BY b.id ORDER BY f.path, b.ord"""
         return [dict(r) for r in self.db.execute(sql)]
 
     def close(self) -> None:

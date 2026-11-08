@@ -290,3 +290,25 @@ def test_cli_memory_flow_is_metadata_only(lab, capsys):
     assert main(["memory", "--config", c, "dupes"]) == 0
     assert main(["memory", "--config", c, "screen"]) == 0
     assert main(["memory", "--config", c, "screen", "--summary"]) == 0
+
+
+def test_quarantined_block_written_back_by_an_agent_is_reported(lab):
+    cfg, idx, _, q = open_lab(lab)
+    idx.scan(cfg.sources)
+    path = topic_path(lab)
+    stale_copy = path.read_text()                       # an agent read the file earlier...
+    tgt = [b for b in idx.blocks(file_path=str(path)) if b["kind"] == "item"][0]
+    hid = q.quarantine([tgt["id"]], "test").held[0]["hold_id"]
+    assert idx.scan(cfg.sources).regrowth == []
+    path.write_text(stale_copy)                         # ...and saves it back afterwards
+    regrew = idx.scan(cfg.sources).regrowth
+    assert [(r["hold_id"], r["kind"]) for r in regrew] == [(hid, "quarantined")]
+    # the same text in a DIFFERENT file is not regrowth of a quarantine (only of an excise)
+    other = lab / "agents" / "alpha" / "notes.md"
+    other.write_text(other.read_text() + "\n- Job A copies the photo library.\n")
+    assert len(idx.scan(cfg.sources).regrowth) == 1
+    # once resolved by release, the restored text is expected, not regrowth
+    path.write_text(path.read_text().replace("- Job A copies the photo library.\n", "", 1))
+    idx.scan(cfg.sources)
+    q.release(hid)
+    assert idx.scan(cfg.sources).regrowth == []

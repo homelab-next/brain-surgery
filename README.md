@@ -10,9 +10,114 @@ Two tools on one classifier cascade and one review queue:
   quarantined block can be released back into place or excised for good, with a watch
   for it growing back. See [Memory](#memory).
 
+The memory side goes further than quarantine: it **traces** a block to the source it was
+copied from, can **reword** or **scope** it instead of deleting it, **screens at write
+time**, and drives a **review web page**. The router and the memory tools share one
+classifier contract, one decision-spec format, and one hold queue.
+
 **Nothing prints memory or prompt text unless you pass `--text`.** An agent session
 that runs these commands sees ids, paths, line ranges, hashes and scores, not the
-content being reviewed.
+content being reviewed. The one exception is the review page, which is the operator's
+own surface and must sit behind your login.
+
+## Quickstart
+
+```bash
+uv venv && uv pip install -e '.[dev]'     # add the anthropic extra for cloud targets
+```
+
+### 1. See everything on a synthetic lab (zero risk)
+
+The fastest way to understand the whole pipeline is a generated lab with a harmless
+**canary** topic and known labels — no real memory, no network, no model calls.
+
+```bash
+brain-surgery synth --out /tmp/lab --agents 40 --with-logs    # tree + labels + session logs
+L="brain-surgery memory --config /tmp/lab/memory.oracle.yaml" # the lab's offline config
+
+$L scan                 # index every block
+$L tree                 # files by source/agent, exposure, counts
+$L dupes                # the same block copied across agents
+$L screen               # shadow-screen every block (records outcomes)
+$L eval --labels /tmp/lab/labels.jsonl        # grade the screen vs known labels
+$L roots                # flagged blocks grouped by the source they trace to
+$L trace-eval --truth /tmp/lab/provenance_truth.jsonl   # grade provenance
+$L web                  # open the review page at http://127.0.0.1:8795
+```
+
+The `oracle` config answers from the labels so the plumbing runs offline; the generated
+`memory.yaml` beside it points the same specs at real `/v1/systemone` endpoints (Laya /
+Clef) for when you measure the real classifiers. See [Synthetic lab](#synthetic-lab).
+
+### 2. Point at real memory (read-only first)
+
+Copy `examples/memory.yaml`, set `sources:` to where your agents' memory actually lives
+(Claude Code memory folders, per-agent memory, CLAUDE.md, skills, notes), and for
+provenance set `provenance.logs:` to your session-log roots. Then the read-only passes:
+
+```bash
+M="brain-surgery memory --config memory.yaml"
+$M scan                 # build the index (reads only)
+$M tree ; $M dupes      # what exists, what is duplicated
+$M roots                # where flagged content traces back to
+```
+
+Nothing changes a file until you quarantine something. State (`index_db`, `holds_db`,
+`provenance.index_db`) must sit **outside** every scanned root — loading the config
+checks this, so quarantined text can't be scanned back in.
+
+### 3. The review loop
+
+Open the page (`$M web`), or drive it from the CLI. A flagged block has five fates:
+
+```bash
+$M quarantine --hash H --reason "why"   # take every copy out of the live files -> hold
+$M rescreen HOLD                         # preview what the screen says (records nothing)
+$M release  HOLD                         # restore the original, verbatim
+$M release  HOLD --replace reword.txt    # restore a clarified / pointer-only version
+$M excise   HOLD --note "confirmed"      # remove for good; watch for it coming back
+$M scope    --hash H --scope restricted-cleared   # keep it, but only load it on cleared models
+```
+
+Group by root first (`$M roots`) — fixing one source usually covers many copies. See
+[Memory](#memory), [Provenance](#provenance), [Scoping](#scoping--keep-a-memory-load-it-only-on-the-right-model).
+
+### 4. The calibration loop (before trusting any outcome)
+
+Screen outcomes are only as good as the thresholds. Treat the first real runs as shadow:
+
+1. `$M screen` in shadow (the default) and work the review queue by hand.
+2. Your **release = benign** and **excise = bad** decisions are the labels; grade with
+   `$M eval --labels <your labels>` — precision-when-confident and escalation, never raw
+   accuracy.
+3. Only once it clears your bar, turn on **write-time enforce** (auto-quarantine as
+   memories are written) and refit thresholds. See
+   [Write-time screening](#write-time-screening-auto-quarantine).
+
+### 5. Route prompts to the right model
+
+The router is the other half, on the same cascade. Copy `examples/routing.yaml`, point its
+targets at your local models and (optionally) a cloud key, and share the memory side's
+`holds.sqlite` so held prompts and quarantined memories land in one queue.
+
+```bash
+brain-surgery lint  examples/specs/*.yaml
+brain-surgery route --config routing.yaml --text "Summarise the backup report."   # decide
+brain-surgery route --config routing.yaml --text "…" --dispatch                   # decide + run
+brain-surgery serve --config routing.yaml --port 8790     # POST /v1/route, /v1/dispatch
+```
+
+### 6. Wire it into the fleet
+
+Three integration points, all behind your own auth/proxy:
+
+- **Review page** — `$M web` behind Caddy + Authentik (start with `--read-only`).
+- **Scoped memory** — exclude `*.scoped.*.md` from the agents' own memory loading, and run
+  `$M scoped-for --model <session model> --agent <a> --text` at session start to load the
+  blocks a cleared model may see. [Scoping](#scoping--keep-a-memory-load-it-only-on-the-right-model).
+- **Write-time screen** — a Claude Code `PostToolUse` hook
+  (`examples/hooks/post_write_screen.py`) for interactive sessions, or a
+  `$M screen-write --file <path>` call from the orchestrator's dispatch step for the fleet.
 
 ## How it works
 

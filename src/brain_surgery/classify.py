@@ -223,4 +223,10 @@ def build_classifier(name: str, cfg: Mapping[str, Any]) -> Classifier:
     if kind == "static":
         return StaticClassifier(name, cfg.get("answers") or {}, model_id=cfg.get("model"),
                                 fail=cfg.get("fail"))
-    raise ValueError(f"classifier {name!r}: unknown kind {kind!r} (systemone | rules | static)")
+    if kind == "label_oracle":  # dry runs on a synthetic lab: answers from labels.jsonl
+        from .memory.synth import LabelOracle
+
+        return LabelOracle(name, cfg["labels"], noise=float(cfg.get("noise", 0.0)),
+                           band=float(cfg.get("band", 0.0)), seed=int(cfg.get("seed", 0)))
+    raise ValueError(f"classifier {name!r}: unknown kind {kind!r} "
+                     "(systemone | rules | static | label_oracle)")

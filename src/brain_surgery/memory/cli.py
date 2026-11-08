@@ -115,7 +115,57 @@ def cmd_screen(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_eval(args: argparse.Namespace) -> int:
+    from .evaluate import evaluate_screen
+
+    cfg, idx, _ = _open(args)
+    if cfg.screen_spec is None:
+        print("no screen.spec in the memory config")
+        return 1
+    res = evaluate_screen(idx, cfg.screen_spec, args.labels, cfg.decision_log_dir)
+    if args.json:
+        print(json.dumps(res, indent=2))
+        return 0
+    o = res["outcomes"]
+    print(f"{res['spec']}: {o['screened']} of {o['labelled']} labelled blocks screened; "
+          f"decided {o['decided']}, unsure {o['unsure']} (unsure rate {o['unsure_rate']}); "
+          f"precision when decided {o['precision_when_decided']}")
+    print("\nexpected -> actual")
+    for exp, acts in sorted(o["confusion"].items()):
+        print(f"  {exp:<11} " + "  ".join(f"{a}={n}" for a, n in sorted(acts.items())))
+    print("\nby scenario")
+    _out(args, [{"scenario": s, **v} for s, v in o["by_scenario"].items()],
+         ["scenario", "n", "decided", "correct", "unsure"])
+    print("\nquestions (precision when confident, coverage = confident / answered)")
+    _out(args, res["questions"], ["question", "tier", "answered", "confident", "correct",
+                                  "precision_when_confident", "coverage"])
+    print("\nescalated (never resolved): " + ", ".join(f"{q}={v}" for q, v in res["escalated"].items()))
+    if res["note"]:
+        print(res["note"])
+    return 0
+
+
+def cmd_synth(args: argparse.Namespace) -> int:
+    from .synth import generate
+
+    print(json.dumps(generate(args.out, agents=args.agents, seed=args.seed,
+                              canary_rate=args.canary_rate), indent=2))
+    return 0
+
+
+def register_synth(sub: argparse._SubParsersAction) -> None:
+    s = sub.add_parser("synth", help="write a synthetic memory lab with known labels "
+                                     "(canary topic, no real sensitive content)")
+    s.add_argument("--out", required=True, help="empty or new directory")
+    s.add_argument("--agents", type=int, default=8)
+    s.add_argument("--seed", type=int, default=7)
+    s.add_argument("--canary-rate", type=float, default=0.5,
+                   help="share of agents (after the first three) given extra canary notes")
+    s.set_defaults(func=cmd_synth)
+
+
 def register(sub: argparse._SubParsersAction) -> None:
+    register_synth(sub)
     m = sub.add_parser("memory", help="memory index, quarantine and shadow screening")
     m.add_argument("--config", required=True, help="memory.yaml")
     ms = m.add_subparsers(dest="memory_cmd", required=True)
@@ -168,3 +218,8 @@ def register(sub: argparse._SubParsersAction) -> None:
     s.add_argument("--summary", action="store_true", help="counts by outcome so far")
     s.add_argument("--json", action="store_true")
     s.set_defaults(func=cmd_screen)
+
+    s = ms.add_parser("eval", help="grade the shadow screen against labelled blocks")
+    s.add_argument("--labels", required=True, help="labels.jsonl (e.g. from `synth`)")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(func=cmd_eval)

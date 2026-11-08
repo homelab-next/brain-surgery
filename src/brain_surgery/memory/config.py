@@ -57,8 +57,14 @@ def load_memory_config(path: str | Path) -> MemoryConfig:
     scr = raw.get("screen") or {}
     if scr.get("spec"):
         spec = load_spec(base / scr["spec"])
+        def resolve(c: dict[str, Any]) -> dict[str, Any]:
+            if c.get("kind") == "label_oracle" and c.get("labels"):
+                return {**c, "labels": str((base / c["labels"]).expanduser())}
+            return c
+
         try:
-            classifiers = {n: build_classifier(n, c) for n, c in (scr.get("classifiers") or {}).items()}
+            classifiers = {n: build_classifier(n, resolve(c))
+                           for n, c in (scr.get("classifiers") or {}).items()}
         except (KeyError, ValueError) as exc:
             raise MemoryConfigError(f"screen classifiers: {exc}") from exc
     return MemoryConfig(sources=sources, index_db=index_db, holds_db=holds_db,

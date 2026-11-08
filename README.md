@@ -200,7 +200,55 @@ $M quarantine --id ID... | --file PATH | --hash H  --reason "why"   [--force]
 $M release HOLD_ID                        # put it back
 $M excise HOLD_ID --note "confirmed"      # scrub + watch
 $M screen [--limit N] | --summary         # shadow screen
+$M eval --labels labels.jsonl             # grade the screen against known labels
 ```
+
+## Synthetic lab
+
+Test and calibrate on memory that is realistic in shape but harmless in content:
+
+```bash
+brain-surgery synth --out /tmp/lab --agents 40 [--seed 7] [--canary-rate 0.5]
+M="brain-surgery memory --config /tmp/lab/memory.oracle.yaml"   # or memory.yaml for real Laya/Clef
+$M scan && $M dupes && $M screen && $M eval --labels /tmp/lab/labels.jsonl
+```
+
+It writes a full tree: an interactive memory folder with its index, per-agent memory
+folders, CLAUDE.md, a **managed** deployed copy, skills, a notes vault, an archive file and
+a trash folder (both excluded), plus one large run log. Every content block has a known
+label in `labels.jsonl`, which sits outside the tree.
+
+The restricted topic is a **canary**: a fictional vendor contract, "Kestrel". It stands in
+for whatever your policy keeps out of always-loaded memory, so the pipeline can be measured
+without generating anything genuinely sensitive. The canary comes in every shape the spec
+distinguishes, each with templated variants so a large lab has many distinct notes:
+
+| scenario | labels | expected |
+|---|---|---|
+| `canary_summary` | restricted | review |
+| `canary_steps` (one copy shared by three agents) | restricted + step detail | quarantine |
+| `canary_verbatim` | restricted + word-for-word quote | quarantine |
+| `canary_steps_verbatim` | restricted + both | quarantine |
+| `canary_pointer` | restricted, points elsewhere only | keep |
+| `hard_negative_codename` | a host named `kestrel-01` | keep |
+| `hard_negative_steps` / `_verbatim` | routine step lists, a quoted firmware changelog | keep |
+
+The "expected" column isn't stored anywhere: `eval` runs the spec's own decision table
+on the labels, so it follows the spec if you change it.
+
+Two generated configs:
+
+- **`memory.oracle.yaml`** uses a `label_oracle` classifier, which answers from the labels
+  with tunable `noise` (wrong answers) and `band` (unsure answers). It is a dry run of the
+  plumbing and the metrics, not a measurement of any model.
+- **`memory.yaml`** points the same spec at `/v1/systemone` endpoints (Laya, Clef). Run it in
+  the lab to measure the real classifiers on the canary.
+
+`eval` reports what the lab grades classifiers by: **precision when confident** and
+**coverage** per question and tier, the **escalation** rate per question, the precision of
+decided outcomes, the unsure rate, an expected-vs-actual confusion table and a
+per-scenario breakdown. If the screen ran without `decision_log_dir`, only the outcome
+metrics are available.
 
 ## Use
 

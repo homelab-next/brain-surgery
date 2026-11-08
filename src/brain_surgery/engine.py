@@ -240,5 +240,6 @@ def _event(spec: DecisionSpec, decision_id: str, ts: str, q: Question, tier: str
         "answer_confidence": None if a is None else a.confidence,
         "confidence_kind": None if a is None else a.confidence_kind,
         "accepted": new_state != PENDING, "abstain_reason": abstain,
+        "state": None if new_state == PENDING else new_state,
         "error": err, "outcome": None, "latency_ms": ms,
     }

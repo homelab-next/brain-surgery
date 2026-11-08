@@ -196,7 +196,11 @@ class Quarantine:
         payload["excised"] = True
         self.holds.update_payload(hold_id, payload)
         self.holds.resolve(hold_id, "excised", note)
-        return {"hold_id": hold_id, "hash": payload["hash"], "watchlisted": True}
+        # Excise applies to the content everywhere: any copy still live (never selected, or
+        # released from another hold) will now be reported as regrowth by every scan.
+        live = [b["id"] for b in self.index.blocks(hash=payload["hash"])]
+        return {"hold_id": hold_id, "hash": payload["hash"], "watchlisted": True,
+                "live_copies": live}
 
     def _open_hold(self, hold_id: int):
         h = self.holds.get(hold_id)
